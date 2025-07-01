@@ -1,0 +1,99 @@
+name: 'Branch-Specific S3 Cache'
+description: 'Cache files on S3 with branch-specific paths for granular permissions'
+author: 'SonarSource'
+
+inputs:
+  path:
+    description: 'A list of files, directories, and wildcard patterns to cache and restore'
+    required: true
+  key:
+    description: 'An explicit key for restoring and saving the cache'
+    required: true
+  restore-keys:
+    description: 'An ordered list of prefix-matched keys to use for restoring stale cache if no cache hit occurred for key'
+    required: false
+  upload-chunk-size:
+    description: 'The chunk size used to split up large files during upload, in bytes'
+    required: false
+  enableCrossOsArchive:
+    description: 'An optional boolean when enabled, allows windows runners to save or restore caches that can be restored or saved respectively on other platforms'
+    default: 'false'
+    required: false
+  fail-on-cache-miss:
+    description: 'Fail the workflow if cache entry is not found'
+    default: 'false'
+    required: false
+  lookup-only:
+    description: 'Check if a cache entry exists for the given input(s) (key, restore-keys) without downloading the cache'
+    default: 'false'
+    required: false
+  s3-bucket:
+    description: 'S3 bucket name for cache storage'
+    required: false
+    default: 'sonar-gh-cache-bucket'
+
+outputs:
+  cache-hit:
+    description: 'A boolean value to indicate an exact match was found for the primary key'
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    # - name: Configure AWS credentials
+    #   uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+    #   with:
+    #     role-to-assume: arn:aws:iam::460386131003:role/deploymentroles/DevInfraSquadDockerImagesInfraWebIdentityAccessRole
+    #     aws-region: eu-central-1
+
+    - name: Validate branch reference
+      shell: bash
+      run: |
+        if [ -z "$GITHUB_HEAD_REF" ]; then
+          echo "::error::GITHUB_HEAD_REF environment variable is not set"
+          exit 1
+        fi
+        echo "Using branch reference: $GITHUB_HEAD_REF"
+
+    - name: Prepare cache keys
+      shell: bash
+      id: prepare-keys
+      run: |
+        # Prepend GITHUB_HEAD_REF to the main cache key
+        BRANCH_KEY="${GITHUB_HEAD_REF}/${{ inputs.key }}"
+        echo "branch-key=${BRANCH_KEY}" >> $GITHUB_OUTPUT
+
+        # Prepend GITHUB_HEAD_REF to restore keys if they exist
+        if [ -n "${{ inputs.restore-keys }}" ]; then
+          RESTORE_KEYS=""
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              if [ -n "$RESTORE_KEYS" ]; then
+                RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"${GITHUB_HEAD_REF}/${line}"
+              else
+                RESTORE_KEYS="${GITHUB_HEAD_REF}/${line}"
+              fi
+            fi
+          done <<< "${{ inputs.restore-keys }}"
+          echo "branch-restore-keys<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESTORE_KEYS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Cache with runs-on/cache
+      uses: runs-on/cache@v4
+      id: cache
+      env:
+        RUNS_ON_S3_BUCKET_CACHE: ${{ inputs.s3-bucket }}
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ steps.prepare-keys.outputs.branch-key }}
+        restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
+        upload-chunk-size: ${{ inputs.upload-chunk-size }}
+        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
+        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
+        lookup-only: ${{ inputs.lookup-only }}
+
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'

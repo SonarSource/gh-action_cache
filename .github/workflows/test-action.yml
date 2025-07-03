@@ -1,0 +1,80 @@
+name: Example Usage
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: sonar-runner-large
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Cache Python dependencies
+      uses: ./
+      with:
+        path: |
+          ~/.cache/pip
+        key: ${{ runner.os }}-python-pytest-requests
+        restore-keys: |
+          ${{ runner.os }}-python-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest requests
+
+    - name: Run tests
+      run: python -m pytest --version
+
+  cache-with-fallback:
+    runs-on: sonar-runner-large
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Cache Go modules with multiple restore keys
+      uses: ./
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ hashFiles('**/go.mod') }}
+          ${{ runner.os }}-go-
+        fail-on-cache-miss: false
+
+    - name: Create simple Go module
+      run: |
+        go mod init example
+        echo 'package main
+        import "fmt"
+        func main() {
+            fmt.Println("Hello, World!")
+        }' > main.go
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build
+      run: go build -o hello main.go

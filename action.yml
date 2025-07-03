@@ -40,35 +40,53 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    # - name: Configure AWS credentials
-    #   uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
-    #   with:
-    #     role-to-assume: arn:aws:iam::460386131003:role/SonarGitHubActionsS3CacheRole
-    #     aws-region: eu-central-1
-
-    - name: Authenticate using Enhanced AuthFlow
-      uses: catnekaise/cognito-idpool-auth@main
-      with:
-        auth-flow: enhanced
-        cognito-identity-pool-id: eu-central-1:502e0bc7-5fdf-4cbc-bd38-0119f310fcef
-        aws-account-id: 460386131003
-        aws-region: eu-central-1
-        audience: cognito-identity.amazonaws.com
-        set-in-environment: true
-
-    - name: "STS Get Caller Identity"
+    - name: Authenticate to AWS
       shell: bash
+      id: aws-auth
+      env: # TODO: Another set of variables needed for production, support GH cache BUILD-8451
+        POOL_ID: eu-central-1:9baeef83-23fd-40a3-83f1-3d8ac55547ec
+        AWS_ACCOUNT_ID: 460386131003
+        IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
+        AUDIENCE: cognito-identity.amazonaws.com
+        AWS_REGION: eu-central-1
       run: |
-        aws sts get-caller-identity
+        # Get GitHub Actions ID token
+        ACCESS_TOKEN=$(curl -sLS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r ".value")
 
-    - name: Validate branch reference
-      shell: bash
-      run: |
-        if [ -z "$GITHUB_HEAD_REF" ]; then
-          echo "::error::GITHUB_HEAD_REF environment variable is not set"
+        # Get Identity ID
+        identityId=$(aws cognito-identity get-id \
+        --identity-pool-id "$POOL_ID" \
+        --account-id "$AWS_ACCOUNT_ID" \
+        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}' \
+        --query 'IdentityId' --output text)
+
+        # Get and validate AWS credentials
+        awsCredentials=$(aws cognito-identity get-credentials-for-identity \
+        --identity-id "$identityId" \
+        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}')
+
+        AWS_ACCESS_KEY_ID=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
+        AWS_SECRET_ACCESS_KEY=$(echo "$awsCredentials" | jq -r ".Credentials.SecretKey")
+        AWS_SESSION_TOKEN=$(echo "$awsCredentials" | jq -r ".Credentials.SessionToken")
+
+        if [[ "$AWS_ACCESS_KEY_ID" == "null" || -z "$AWS_ACCESS_KEY_ID" ]]; then
+          echo "::error::Failed to obtain AWS Access Key ID"
           exit 1
         fi
-        echo "Using branch reference: $GITHUB_HEAD_REF"
+
+        if [[ "$AWS_SECRET_ACCESS_KEY" == "null" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
+          echo "::error::Failed to obtain AWS Secret Access Key"
+          exit 1
+        fi
+
+        if [[ "$AWS_SESSION_TOKEN" == "null" || -z "$AWS_SESSION_TOKEN" ]]; then
+          echo "::error::Failed to obtain AWS Session Token"
+          exit 1
+        fi
+
+        echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> $GITHUB_ENV
+        echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> $GITHUB_ENV
 
     - name: Prepare cache keys
       shell: bash
@@ -78,9 +96,10 @@ runs:
         BRANCH_KEY="${GITHUB_HEAD_REF}/${{ inputs.key }}"
         echo "branch-key=${BRANCH_KEY}" >> $GITHUB_OUTPUT
 
-        # Prepend GITHUB_HEAD_REF to restore keys if they exist
+        # Process restore keys: keep branch-specific keys and add fallback to default branch
         if [ -n "${{ inputs.restore-keys }}" ]; then
           RESTORE_KEYS=""
+          # First, add branch-specific restore keys
           while IFS= read -r line; do
             if [ -n "$line" ]; then
               if [ -n "$RESTORE_KEYS" ]; then
@@ -90,6 +109,14 @@ runs:
               fi
             fi
           done <<< "${{ inputs.restore-keys }}"
+
+          # Then, add default branch fallback keys (without GITHUB_HEAD_REF prefix)
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"${line}"
+            fi
+          done <<< "${{ inputs.restore-keys }}"
+          
           echo "branch-restore-keys<<EOF" >> $GITHUB_OUTPUT
           echo "$RESTORE_KEYS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT

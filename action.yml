@@ -1,0 +1,140 @@
+name: 'S3 Cache action'
+description: 'Cache files on S3 with branch-specific paths for granular permissions'
+author: 'SonarSource'
+
+inputs:
+  path:
+    description: 'A list of files, directories, and wildcard patterns to cache and restore'
+    required: true
+  key:
+    description: 'An explicit key for restoring and saving the cache'
+    required: true
+  restore-keys:
+    description: 'An ordered list of prefix-matched keys to use for restoring stale cache if no cache hit occurred for key'
+  upload-chunk-size:
+    description: 'The chunk size used to split up large files during upload, in bytes'
+  enableCrossOsArchive:
+    description: 'An optional boolean when enabled, allows windows runners to save or restore caches that can be restored or saved respectively on other platforms'
+    default: 'false'
+  fail-on-cache-miss:
+    description: 'Fail the workflow if cache entry is not found'
+    default: 'false'
+  lookup-only:
+    description: 'Check if a cache entry exists for the given input(s) (key, restore-keys) without downloading the cache'
+    default: 'false'
+  s3-bucket:
+    description: 'S3 bucket name for cache storage'
+    default: 'sonarsource-s3-cache-dev-bucket'
+
+outputs:
+  cache-hit:
+    description: 'A boolean value to indicate an exact match was found for the primary key'
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Authenticate to AWS
+      shell: bash
+      env: # TODO: Another set of variables needed for production, support GH cache BUILD-8451
+        POOL_ID: eu-central-1:2f2d946d-08df-415c-9b0c-d097bef49dcc
+        AWS_ACCOUNT_ID: 460386131003
+        IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
+        AUDIENCE: cognito-identity.amazonaws.com
+        AWS_REGION: eu-central-1
+      run: |
+        # Get GitHub Actions ID token
+        ACCESS_TOKEN=$(curl -sLS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r ".value")
+        echo "::add-mask::$ACCESS_TOKEN"
+
+        # Get Identity ID
+        identityId=$(aws cognito-identity get-id \
+        --identity-pool-id "$POOL_ID" \
+        --account-id "$AWS_ACCOUNT_ID" \
+        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}' \
+        --query 'IdentityId' --output text)
+
+        # Get and validate AWS credentials
+        awsCredentials=$(aws cognito-identity get-credentials-for-identity \
+        --identity-id "$identityId" \
+        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}')
+
+        AWS_ACCESS_KEY_ID=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
+        AWS_SECRET_ACCESS_KEY=$(echo "$awsCredentials" | jq -r ".Credentials.SecretKey")
+        AWS_SESSION_TOKEN=$(echo "$awsCredentials" | jq -r ".Credentials.SessionToken")
+
+        echo "::add-mask::$AWS_ACCESS_KEY_ID"
+        echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
+        echo "::add-mask::$AWS_SESSION_TOKEN"
+
+        if [[ "$AWS_ACCESS_KEY_ID" == "null" || -z "$AWS_ACCESS_KEY_ID" ]]; then
+          echo "::error::Failed to obtain AWS Access Key ID"
+          exit 1
+        fi
+
+        if [[ "$AWS_SECRET_ACCESS_KEY" == "null" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
+          echo "::error::Failed to obtain AWS Secret Access Key"
+          exit 1
+        fi
+
+        if [[ "$AWS_SESSION_TOKEN" == "null" || -z "$AWS_SESSION_TOKEN" ]]; then
+          echo "::error::Failed to obtain AWS Session Token"
+          exit 1
+        fi
+
+        echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> $GITHUB_ENV
+        echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> $GITHUB_ENV
+
+    - name: Prepare cache keys
+      shell: bash
+      id: prepare-keys
+      run: |
+        # Prepend GITHUB_HEAD_REF to the main cache key
+        BRANCH_KEY="${GITHUB_HEAD_REF}/${{ inputs.key }}"
+        echo "branch-key=${BRANCH_KEY}" >> $GITHUB_OUTPUT
+
+        # Process restore keys: keep branch-specific keys and add fallback to default branch
+        if [ -n "${{ inputs.restore-keys }}" ]; then
+          RESTORE_KEYS=""
+          # First, add branch-specific restore keys
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              if [ -n "$RESTORE_KEYS" ]; then
+                RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"${GITHUB_HEAD_REF}/${line}"
+              else
+                RESTORE_KEYS="${GITHUB_HEAD_REF}/${line}"
+              fi
+            fi
+          done <<< "${{ inputs.restore-keys }}"
+
+          # Then, add default branch fallback keys (without GITHUB_HEAD_REF prefix)
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"${line}"
+            fi
+          done <<< "${{ inputs.restore-keys }}"
+
+          echo "branch-restore-keys<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESTORE_KEYS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Cache with runs-on/cache
+      uses: runs-on/cache@3a15256b3556fbc5ae15f7f04598e4c7680e9c25 # v4.0.0
+      id: cache
+      env:
+        RUNS_ON_S3_BUCKET_CACHE: ${{ inputs.s3-bucket }}
+        AWS_DEFAULT_REGION: eu-central-1
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ steps.prepare-keys.outputs.branch-key }}
+        restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
+        upload-chunk-size: ${{ inputs.upload-chunk-size }}
+        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
+        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
+        lookup-only: ${{ inputs.lookup-only }}
+
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'

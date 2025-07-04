@@ -1,0 +1,63 @@
+name: Test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: sonar-runner-large
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - uses: jdx/mise-action@5cb1df66ed5e1fb3c670ea0b62fd17a76979826a # v2.3.1
+    - name: Cache Python dependencies
+      uses: ./
+      with:
+        path: |
+          ~/.cache/pip
+        key: python-${{ runner.os }}-pytest-requests
+        restore-keys: python-${{ runner.os }}-
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest requests
+    - name: Run tests
+      run: python -m pytest --version
+
+  cache-with-fallback:
+    runs-on: sonar-runner-large
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - uses: jdx/mise-action@5cb1df66ed5e1fb3c670ea0b62fd17a76979826a # v2.3.1
+    - name: Cache Go modules with multiple restore keys
+      uses: ./
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          go-${{ runner.os }}-${{ hashFiles('**/go.mod') }}
+          go-${{ runner.os }}-
+        fail-on-cache-miss: false
+    - name: Create simple Go module
+      run: |
+        go mod init example
+        echo 'package main
+        import "fmt"
+        func main() {
+            fmt.Println("Hello, World!")
+        }' > main.go
+    - name: Download dependencies
+      run: go mod download
+    - name: Build
+      run: go build -o hello main.go

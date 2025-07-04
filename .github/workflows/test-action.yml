@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-large
+    runs-on: sonar-runner-large
     permissions:
       id-token: write
       contents: read
@@ -30,7 +30,7 @@ jobs:
       run: python -m pytest --version
 
   cache-with-fallback:
-    runs-on: ubuntu-24.04-large
+    runs-on: sonar-runner-large
     permissions:
       id-token: write
       contents: read

@@ -11,25 +11,19 @@ inputs:
     required: true
   restore-keys:
     description: 'An ordered list of prefix-matched keys to use for restoring stale cache if no cache hit occurred for key'
-    required: false
   upload-chunk-size:
     description: 'The chunk size used to split up large files during upload, in bytes'
-    required: false
   enableCrossOsArchive:
     description: 'An optional boolean when enabled, allows windows runners to save or restore caches that can be restored or saved respectively on other platforms'
     default: 'false'
-    required: false
   fail-on-cache-miss:
     description: 'Fail the workflow if cache entry is not found'
     default: 'false'
-    required: false
   lookup-only:
     description: 'Check if a cache entry exists for the given input(s) (key, restore-keys) without downloading the cache'
     default: 'false'
-    required: false
   s3-bucket:
     description: 'S3 bucket name for cache storage'
-    required: false
     default: 'sonarsource-s3-cache-dev-bucket'
 
 outputs:
@@ -43,7 +37,7 @@ runs:
     - name: Authenticate to AWS
       shell: bash
       env: # TODO: Another set of variables needed for production, support GH cache BUILD-8451
-        POOL_ID: eu-central-1:9baeef83-23fd-40a3-83f1-3d8ac55547ec
+        POOL_ID: eu-central-1:2f2d946d-08df-415c-9b0c-d097bef49dcc
         AWS_ACCOUNT_ID: 460386131003
         IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
         AUDIENCE: cognito-identity.amazonaws.com
@@ -127,7 +121,7 @@ runs:
         fi
 
     - name: Cache with runs-on/cache
-      uses: runs-on/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: runs-on/cache@3a15256b3556fbc5ae15f7f04598e4c7680e9c25 # v4.0.0
       id: cache
       env:
         RUNS_ON_S3_BUCKET_CACHE: ${{ inputs.s3-bucket }}

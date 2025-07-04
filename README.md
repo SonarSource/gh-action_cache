@@ -18,9 +18,9 @@ A GitHub Action that provides branch-specific caching on AWS S3 with intelligent
     path: |
       ~/.npm
       ~/.cache
-    key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+    key: node-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
     restore-keys: |
-      ${{ runner.os }}-node-
+      node-${{ runner.os }}
     s3-bucket: your-cache-bucket
 ```
 

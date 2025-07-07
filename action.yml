@@ -86,6 +86,67 @@ runs:
         echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> $GITHUB_ENV
         echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> $GITHUB_ENV
 
+    - name: Testing S3 paths
+      shell: bash
+      run: |
+        echo "Testing S3 access to cache paths..."
+        
+        # Test 1: Branch-specific cache path - write and read
+        BRANCH_PATH="s3://sonarsource-s3-cache-dev-bucket/cache/SonarSource/gh-action_cache/2a50607a47f0c27aad98b33e03fa13615fdc9c33dc4fff3945d2d5078a8f7664/feat/mmatuszny/BUILD-8368d/"
+        echo "=== Testing branch path: $BRANCH_PATH ==="
+        
+        # Write test file
+        echo "test content $(date)" > /tmp/test-file.txt
+        echo "Writing test file..."
+        aws s3 cp /tmp/test-file.txt "$BRANCH_PATH/test-file.txt" || echo "❌ Write failed"
+        
+        # Read test file
+        echo "Reading test file..."
+        aws s3 cp "$BRANCH_PATH/test-file.txt" /tmp/read-test.txt || echo "❌ Read failed"
+        
+        # List files
+        echo "Listing files..."
+        aws s3 ls "$BRANCH_PATH" || echo "❌ List failed"
+        
+        # Test 2: Master branch cache path - list and read
+        MASTER_PATH="s3://sonarsource-s3-cache-dev-bucket/cache/SonarSource/gh-action_cache/2a50607a47f0c27aad98b33e03fa13615fdc9c33dc4fff3945d2d5078a8f7664/refs/heads/master/"
+        echo "=== Testing master path: $MASTER_PATH ==="
+        
+        # List files
+        echo "Listing master files..."
+        aws s3 ls "$MASTER_PATH" || echo "❌ Master list failed"
+        
+        # Try to read any existing file
+        echo "Attempting to read existing files..."
+        aws s3 ls "$MASTER_PATH" | head -1 | awk '{print $4}' | while read filename; do
+          if [ -n "$filename" ]; then
+            echo "Reading: $filename"
+            aws s3 cp "$MASTER_PATH$filename" /tmp/master-read.txt || echo "❌ Master read failed"
+          fi
+        done
+        
+        # Test 3: Write to master branch path
+        echo "Writing to master path..."
+        aws s3 cp /tmp/test-file.txt "$MASTER_PATH/test-write.txt" || echo "❌ Master write failed"
+        
+        # Test 4: Alternative S3 path - read, list, write
+        ALT_PATH="s3://sonarsource-s3-cache-dev-bucket/cache/SonarSource/docker-images/2426271a4051ce7a8026fbe47634fa586c108098b7f6ebd02486b4bfd996fa48/feat/mmatuszny/BUILD-8086-s3-cache-secondary/"
+        echo "=== Testing alternative path: $ALT_PATH ==="
+        
+        # List files
+        echo "Listing files..."
+        aws s3 ls "$ALT_PATH" || echo "❌ List failed"
+        
+        # Write test file
+        echo "Writing test file..."
+        aws s3 cp /tmp/test-file.txt "$ALT_PATH/test.txt" || echo "❌ Write failed"
+        
+        # Read test file
+        echo "Reading test file..."
+        aws s3 cp "$ALT_PATH/test.txt" /tmp/alt-read.txt || echo "❌ Read failed"
+        
+        echo "S3 access testing completed."
+
     - name: Prepare cache keys
       shell: bash
       id: prepare-keys

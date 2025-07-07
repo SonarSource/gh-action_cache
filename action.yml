@@ -90,8 +90,9 @@ runs:
       shell: bash
       id: prepare-keys
       run: |
-        # Prepend GITHUB_HEAD_REF to the main cache key
-        BRANCH_KEY="${GITHUB_HEAD_REF}/${{ inputs.key }}"
+        # Use GITHUB_HEAD_REF for PR events, GITHUB_REF_NAME for push events
+        BRANCH_NAME="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+        BRANCH_KEY="${BRANCH_NAME}/${{ inputs.key }}"
         echo "branch-key=${BRANCH_KEY}" >> $GITHUB_OUTPUT
 
         # Process restore keys: keep branch-specific keys and add fallback to default branch
@@ -101,9 +102,9 @@ runs:
           while IFS= read -r line; do
             if [ -n "$line" ]; then
               if [ -n "$RESTORE_KEYS" ]; then
-                RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"${GITHUB_HEAD_REF}/${line}"
+                RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"${BRANCH_NAME}/${line}"
               else
-                RESTORE_KEYS="${GITHUB_HEAD_REF}/${line}"
+                RESTORE_KEYS="${BRANCH_NAME}/${line}"
               fi
             fi
           done <<< "${{ inputs.restore-keys }}"

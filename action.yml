@@ -90,8 +90,8 @@ runs:
       shell: bash
       id: prepare-keys
       run: |
-        # Use GITHUB_HEAD_REF for PR events, GITHUB_REF_NAME for push events
-        BRANCH_NAME="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+        # Use GITHUB_HEAD_REF for PR events, GITHUB_REF for push events
+        BRANCH_NAME="${GITHUB_HEAD_REF:-$GITHUB_REF}"
         BRANCH_KEY="${BRANCH_NAME}/${{ inputs.key }}"
         echo "branch-key=${BRANCH_KEY}" >> $GITHUB_OUTPUT
 

@@ -1,5 +1,5 @@
-name: 'S3 Cache action'
-description: 'Cache files on S3 with branch-specific paths for granular permissions'
+name: 'Adaptive Cache action'
+description: 'Cache files using GitHub Actions cache for public repos or S3 for private/internal repos with branch-specific paths'
 author: 'SonarSource'
 
 inputs:
@@ -34,7 +34,37 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Determine cache backend
+      shell: bash
+      id: cache-backend
+      run: |
+        # Check repository visibility
+        REPO_VISIBILITY="${{ github.event.repository.visibility }}"
+        
+        # If visibility is not available in the event, try to get it from the API
+        if [ -z "$REPO_VISIBILITY" ] || [ "$REPO_VISIBILITY" = "null" ]; then
+          # Use GitHub API to get repository visibility
+          REPO_VISIBILITY=$(curl -s -H "Authorization: token ${{ github.token }}" \
+            "https://api.github.com/repos/${{ github.repository }}" | \
+            jq -r '.visibility // "private"')
+        fi
+        
+        echo "Repository visibility: $REPO_VISIBILITY"
+        
+        # Determine cache backend based on visibility
+        if [ "$REPO_VISIBILITY" = "public" ]; then
+          CACHE_BACKEND="github"
+          echo "Using GitHub cache for public repository"
+        else
+          CACHE_BACKEND="s3"
+          echo "Using S3 cache for private/internal repository"
+        fi
+        
+        echo "cache-backend=$CACHE_BACKEND" >> $GITHUB_OUTPUT
+        echo "repo-visibility=$REPO_VISIBILITY" >> $GITHUB_OUTPUT
+
     - name: Authenticate to AWS
+      if: steps.cache-backend.outputs.cache-backend == 's3'
       shell: bash
       env: # TODO: Another set of variables needed for production, support GH cache BUILD-8451
         POOL_ID: eu-central-1:2f2d946d-08df-415c-9b0c-d097bef49dcc
@@ -87,6 +117,7 @@ runs:
         echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> $GITHUB_ENV
 
     - name: Prepare cache keys
+      if: steps.cache-backend.outputs.cache-backend == 's3'
       shell: bash
       id: prepare-keys
       run: |
@@ -121,9 +152,23 @@ runs:
           echo "EOF" >> $GITHUB_OUTPUT
         fi
 
+    - name: Cache with GitHub Actions
+      if: steps.cache-backend.outputs.cache-backend == 'github'
+      uses: actions/cache@v4
+      id: cache-github
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}
+        upload-chunk-size: ${{ inputs.upload-chunk-size }}
+        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
+        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
+        lookup-only: ${{ inputs.lookup-only }}
+
     - name: Cache with runs-on/cache
+      if: steps.cache-backend.outputs.cache-backend == 's3'
       uses: runs-on/cache@3a15256b3556fbc5ae15f7f04598e4c7680e9c25 # v4.0.0
-      id: cache
+      id: cache-s3
       env:
         RUNS_ON_S3_BUCKET_CACHE: ${{ inputs.s3-bucket }}
         AWS_DEFAULT_REGION: eu-central-1
@@ -135,6 +180,17 @@ runs:
         enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
+
+    - name: Set unified outputs
+      shell: bash
+      id: cache
+      run: |
+        # Set cache-hit output based on which backend was used
+        if [ "${{ steps.cache-backend.outputs.cache-backend }}" = "github" ]; then
+          echo "cache-hit=${{ steps.cache-github.outputs.cache-hit }}" >> $GITHUB_OUTPUT
+        else
+          echo "cache-hit=${{ steps.cache-s3.outputs.cache-hit }}" >> $GITHUB_OUTPUT
+        fi
 
 branding:
   icon: 'upload-cloud'

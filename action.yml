@@ -1,44 +1,44 @@
-name: 'S3 Cache action'
-description: 'Cache files on S3 with branch-specific paths for granular permissions'
-author: 'SonarSource'
+name: S3 Cache action
+description: Cache files on S3 with branch-specific paths for granular permissions
+author: SonarSource
 
 inputs:
   path:
-    description: 'A list of files, directories, and wildcard patterns to cache and restore'
+    description: A list of files, directories, and wildcard patterns to cache and restore
     required: true
   key:
-    description: 'An explicit key for restoring and saving the cache'
+    description: An explicit key for restoring and saving the cache
     required: true
   restore-keys:
-    description: 'An ordered list of prefix-matched keys to use for restoring stale cache if no cache hit occurred for key'
+    description: An ordered list of prefix-matched keys to use for restoring stale cache if no cache hit occurred for key
   upload-chunk-size:
-    description: 'The chunk size used to split up large files during upload, in bytes'
+    description: The chunk size used to split up large files during upload, in bytes
   enableCrossOsArchive:
-    description: 'An optional boolean when enabled, allows windows runners to save or restore caches that can be restored or saved respectively on other platforms'
-    default: 'false'
+    description: An optional boolean when enabled, allows windows runners to save or restore caches that can be restored or saved respectively on other platforms
+    default: false
   fail-on-cache-miss:
-    description: 'Fail the workflow if cache entry is not found'
-    default: 'false'
+    description: Fail the workflow if cache entry is not found
+    default: false
   lookup-only:
-    description: 'Check if a cache entry exists for the given input(s) (key, restore-keys) without downloading the cache'
-    default: 'false'
-  s3-bucket:
-    description: 'S3 bucket name for cache storage'
-    default: 'sonarsource-s3-cache-dev-bucket'
+    description: Check if a cache entry exists for the given input(s) (key, restore-keys) without downloading the cache
+    default: false
+  environment:
+    description: Environment to use (dev or prod)
+    default: prod
 
 outputs:
   cache-hit:
-    description: 'A boolean value to indicate an exact match was found for the primary key'
+    description: A boolean value to indicate an exact match was found for the primary key
     value: ${{ steps.cache.outputs.cache-hit }}
 
 runs:
-  using: 'composite'
+  using: composite
   steps:
     - name: Authenticate to AWS
       shell: bash
-      env: # TODO: Another set of variables needed for production, support GH cache BUILD-8451
-        POOL_ID: eu-central-1:2f2d946d-08df-415c-9b0c-d097bef49dcc
-        AWS_ACCOUNT_ID: 460386131003
+      env:
+        POOL_ID: ${{ inputs.environment == 'prod' && 'eu-central-1:511fe374-ae4f-46d0-adb7-9246e570c7f4' || 'eu-central-1:3221c6ea-3f67-4fd8-a7ff-7426f96add89' }}
+        AWS_ACCOUNT_ID: ${{ inputs.environment == 'prod' && '275878209202' || '460386131003' }}
         IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
         AUDIENCE: cognito-identity.amazonaws.com
         AWS_REGION: eu-central-1
@@ -121,11 +121,11 @@ runs:
           echo "EOF" >> $GITHUB_OUTPUT
         fi
 
-    - name: Cache with runs-on/cache
+    - name: Cache on S3
       uses: runs-on/cache@3a15256b3556fbc5ae15f7f04598e4c7680e9c25 # v4.0.0
       id: cache
       env:
-        RUNS_ON_S3_BUCKET_CACHE: ${{ inputs.s3-bucket }}
+        RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
         AWS_DEFAULT_REGION: eu-central-1
       with:
         path: ${{ inputs.path }}
@@ -137,5 +137,5 @@ runs:
         lookup-only: ${{ inputs.lookup-only }}
 
 branding:
-  icon: 'upload-cloud'
-  color: 'blue'
+  icon: upload-cloud
+  color: blue

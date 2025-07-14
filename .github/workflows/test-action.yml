@@ -23,6 +23,8 @@ jobs:
           ~/.cache/pip
         key: python-${{ runner.os }}-pytest-requests
         restore-keys: python-${{ runner.os }}-
+        environment: dev
+
     - name: Check cache hit result
       run: |
         echo "Cache hit: ${{ steps.cache-python.outputs.cache-hit }}"
@@ -59,6 +61,7 @@ jobs:
           go-${{ runner.os }}-${{ hashFiles('**/go.mod') }}
           go-${{ runner.os }}-
         fail-on-cache-miss: false
+        environment: dev
     - name: Check Go cache hit result
       run: |
         echo "Go cache hit: ${{ steps.cache-go.outputs.cache-hit }}"

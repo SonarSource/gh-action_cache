@@ -22,7 +22,6 @@ jobs:
         path: |
           ~/.cache/pip
         key: python-${{ runner.os }}-pytest-requests
-        restore-keys: python-${{ runner.os }}-
 
     - name: Check cache hit result
       run: |

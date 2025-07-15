@@ -50,7 +50,7 @@ When you provide `restore-keys`, the action searches for cache entries in this o
       node-${{ runner.os }}
 ```
 
-For a feature branch `feature/new-ui`, this will search for:
+For a feature branch `feature/new-ui`, this will search for: 
 
 1. `feature/new-ui/node-linux-abc123...` (exact match)
 2. `feature/new-ui/node-linux` (branch-specific partial match)

@@ -12,7 +12,8 @@ A GitHub Action that provides branch-specific caching on AWS S3 with intelligent
 
 ## Usage
 
-Recommended usage is to use with a wrapper in [`ci-github-actions`](https://github.com/SonarSource/ci-github-actions/blob/master/cache/action.yml).
+Recommended usage is to use with the
+[`SonarSource/ci-github-actions/cache`](https://github.com/SonarSource/ci-github-actions?tab=readme-ov-file#cache) wrapper.
 
 ```yaml
 - uses: SonarSource/ci-github-actions/cache@master
@@ -37,7 +38,8 @@ When you provide `restore-keys`, the action searches for cache entries in this o
 1. **Primary key**: `${BRANCH_NAME}/${key}`
 2. **Branch-specific restore keys**: `${BRANCH_NAME}/${restore-key}` (for each restore key)
 3. **Default branch fallbacks**:
-   - `refs/heads/${DEFAULT_BRANCH}/${restore-key}` (for each restore key, where `DEFAULT_BRANCH` is dynamically obtained from the repository)
+    - `refs/heads/${DEFAULT_BRANCH}/${restore-key}` (for each restore key, where `DEFAULT_BRANCH` is dynamically obtained from the
+      repository)
 
 ### Example
 
@@ -64,21 +66,21 @@ For a feature branch `feature/new-ui`, this will search for:
 
 ## Inputs
 
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
-| `path` | Files, directories, and wildcard patterns to cache | Yes | |
-| `key` | Explicit key for restoring and saving cache | Yes | |
-| `restore-keys` | Ordered list of prefix-matched keys for fallback | No | |
-| `environment` | Environment to use (dev or prod) | No | `prod` |
-| `upload-chunk-size` | Chunk size for large file uploads (bytes) | No | |
-| `enableCrossOsArchive` | Enable cross-OS cache compatibility | No | `false` |
-| `fail-on-cache-miss` | Fail workflow if cache entry not found | No | `false` |
-| `lookup-only` | Only check cache existence without downloading | No | `false` |
+| Input                  | Description                                        | Required | Default |
+|------------------------|----------------------------------------------------|----------|---------|
+| `path`                 | Files, directories, and wildcard patterns to cache | Yes      |         |
+| `key`                  | Explicit key for restoring and saving cache        | Yes      |         |
+| `restore-keys`         | Ordered list of prefix-matched keys for fallback   | No       |         |
+| `environment`          | Environment to use (dev or prod)                   | No       | `prod`  |
+| `upload-chunk-size`    | Chunk size for large file uploads (bytes)          | No       |         |
+| `enableCrossOsArchive` | Enable cross-OS cache compatibility                | No       | `false` |
+| `fail-on-cache-miss`   | Fail workflow if cache entry not found             | No       | `false` |
+| `lookup-only`          | Only check cache existence without downloading     | No       | `false` |
 
 ## Outputs
 
-| Output | Description |
-|--------|-------------|
+| Output      | Description                                    |
+|-------------|------------------------------------------------|
 | `cache-hit` | Boolean indicating exact match for primary key |
 
 ## Environment Configuration

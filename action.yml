@@ -43,15 +43,9 @@ runs:
         AUDIENCE: cognito-identity.amazonaws.com
         AWS_REGION: eu-central-1
       run: |
-        # Get GitHub Actions ID token
-        ACCESS_TOKEN=$(curl -sLS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r ".value")
+        # Get GitHub Actions ID token using script
+        ACCESS_TOKEN=$("$GITHUB_ACTION_PATH/scripts/get-github-token.sh")
         echo "::add-mask::$ACCESS_TOKEN"
-
-        # Validate required parameters
-        if [[ "$ACCESS_TOKEN" == "null" || -z "$ACCESS_TOKEN" ]]; then
-          echo "::error::Failed to obtain GitHub Actions ID token"
-          exit 1
-        fi
 
         # Get Identity ID
         identityId=$(aws cognito-identity get-id \

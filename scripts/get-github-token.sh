@@ -1,4 +1,4 @@
-#!/usr/bin/env bash -x
+#!/usr/bin/env bash
 #
 # GitHub Actions ID Token Retrieval with Exponential Backoff
 #
@@ -15,6 +15,7 @@
 #   1: Failure - unable to retrieve token after all retry attempts
 #
 
+set -x
 set -euo pipefail
 
 readonly MAX_ATTEMPTS=5

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bash -x
 #
 # GitHub Actions ID Token Retrieval with Exponential Backoff
 #

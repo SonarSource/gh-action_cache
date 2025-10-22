@@ -69,7 +69,7 @@ get_github_token() {
     # Exponential backoff with jitter
     if [[ $attempt -lt $MAX_ATTEMPTS ]]; then
       local base_wait=$((2 ** attempt))
-      local jitter=$((RANDOM % 3))I
+      local jitter=$((RANDOM % 3))
       local wait_time=$((base_wait + jitter))
       log_warning "Retrying in ${wait_time}s..."
       sleep "$wait_time"

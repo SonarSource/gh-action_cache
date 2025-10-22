@@ -49,16 +49,16 @@ get_github_token() {
       local response_body
       response_body=$(echo "$response" | head -n-1)
 
-      # Debug: Log response structure (first 200 chars)
-      echo "::debug::Response body preview: ${response_body:0:200}"
-      echo "::debug::Response HTTP code: $http_code"
+      # Debug: Log response structure (first 200 chars) - output to stderr so it's not captured
+      echo "::debug::Response body preview: ${response_body:0:200}" >&2
+      echo "::debug::Response HTTP code: $http_code" >&2
 
       local token
       token=$(echo "$response_body" | jq -r ".value" 2>/dev/null)
       local jq_exit=$?
 
-      echo "::debug::jq exit code: $jq_exit"
-      echo "::debug::Token extracted: '$token' (length: ${#token})"
+      echo "::debug::jq exit code: $jq_exit" >&2
+      echo "::debug::Token extracted: '$token' (length: ${#token})" >&2
 
       if [[ "$token" != "null" && -n "$token" ]]; then
         echo "$token"

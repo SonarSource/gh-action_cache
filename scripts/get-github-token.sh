@@ -45,9 +45,9 @@ get_github_token() {
     local curl_exit=$?
 
     if [[ $curl_exit -eq 0 ]]; then
-      http_code=$(echo "$response" | tail -n1)
+      http_code=$(echo "$response" | tail -n 1)
       local token
-      token=$(echo "$response" | head -n-1 | jq -r ".value" 2>/dev/null)
+      token=$(echo "$response" | sed '$d' | jq -r ".value" 2>/dev/null)
 
       if [[ "$token" != "null" && -n "$token" ]]; then
         echo "$token"

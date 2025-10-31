@@ -134,7 +134,7 @@ runs:
         fi
 
     - name: Cache on S3
-      uses: runs-on/cache@3a15256b3556fbc5ae15f7f04598e4c7680e9c25 # v4.0.0
+      uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
       id: cache
       env:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket

@@ -139,6 +139,7 @@ runs:
       env:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
         AWS_DEFAULT_REGION: eu-central-1
+        AWS_REGION: eu-central-1
       with:
         path: ${{ inputs.path }}
         key: ${{ steps.prepare-keys.outputs.branch-key }}

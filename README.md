@@ -1,99 +1,150 @@
-# S3 Cache Action
+# ccache S3 HTTP Proxy
 
-A GitHub Action that provides branch-specific caching on AWS S3 with intelligent fallback to default branch cache entries.
+A GitHub Action that provides an HTTP proxy for ccache remote storage backed by AWS S3.
 
 ## Features
 
-- **Branch-specific caching**: Cache entries are prefixed with `GITHUB_HEAD_REF` for granular permissions
-- **Intelligent fallback**: Feature branches can fall back to default branch cache when no branch-specific cache exists
-- **S3 storage**: Leverages AWS S3 for reliable, scalable cache storage
-- **AWS Cognito authentication**: Secure authentication using GitHub Actions OIDC tokens
-- **Compatible with actions/cache**: Drop-in replacement with same interface
+- Transparent HTTP proxy for ccache remote cache storage
+- Direct integration with AWS S3
+- Automatic setup with mise, Python, and Poetry
+- Background process that runs for the duration of the workflow
 
 ## Usage
 
-Recommended usage is to use with the
-[`SonarSource/ci-github-actions/cache`](https://github.com/SonarSource/ci-github-actions?tab=readme-ov-file#cache) wrapper.
-
 ```yaml
-- uses: SonarSource/ci-github-actions/cache@master
-  with:
-    path: |
-      ~/.npm
-      ~/.cache
-    key: node-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
-    restore-keys: |
-      node-${{ runner.os }}
+name: Build with ccache
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Start ccache S3 proxy
+        uses: SonarSource/cfamily-s3-http-cache-proxy@v1
+        with:
+          s3-bucket: my-ccache-bucket
+          s3-prefix: ccache/
+          proxy-port: 8080
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Configure ccache
+        run: |
+          ccache --set-config=remote_storage="http://localhost:8080"
+          ccache --set-config=max_size=5G
+          ccache --show-config
+
+      - name: Build project
+        run: |
+          export CC="ccache gcc"
+          export CXX="ccache g++"
+          make -j$(nproc)
+
+      - name: Show ccache statistics
+        run: ccache --show-stats
 ```
-
-## How Restore Keys Work
-
-**Important**: This action's restore key behavior differs from the standard GitHub cache action.
-To enable fallback to default branch caches, you **must** use the `restore-keys` property.
-
-### Cache Key Resolution Order
-
-When you provide `restore-keys`, the action searches for cache entries in this order:
-
-1. **Primary key**: `${BRANCH_NAME}/${key}`
-2. **Branch-specific restore keys**: `${BRANCH_NAME}/${restore-key}` (for each restore key)
-3. **Default branch fallbacks**:
-    - `refs/heads/${DEFAULT_BRANCH}/${restore-key}` (for each restore key, where `DEFAULT_BRANCH` is dynamically obtained from the
-      repository)
-
-### Example
-
-```yaml
-- uses: SonarSource/ci-github-actions/cache@master
-  with:
-    path: ~/.npm
-    key: node-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
-    restore-keys: |
-      node-${{ runner.os }}
-```
-
-For a feature branch `feature/new-ui`, this will search for:
-
-1. `feature/new-ui/node-linux-abc123...` (exact match)
-2. `feature/new-ui/node-linux` (branch-specific partial match)
-3. `refs/heads/main/node-linux` (default branch fallback, assuming `main` is the repository's default branch)
-
-### Key Differences from Standard Cache Action
-
-- **Fallback requires restore-keys**: Without `restore-keys`, the action only looks for branch-specific cache entries
-- **Dynamic default branch detection**: The action detects your default branch using the GitHub API and uses it for fallback
-- **Branch isolation**: Each branch maintains its own cache namespace, preventing cross-branch cache pollution
 
 ## Inputs
 
-| Input                  | Description                                        | Required | Default |
-|------------------------|----------------------------------------------------|----------|---------|
-| `path`                 | Files, directories, and wildcard patterns to cache | Yes      |         |
-| `key`                  | Explicit key for restoring and saving cache        | Yes      |         |
-| `restore-keys`         | Ordered list of prefix-matched keys for fallback   | No       |         |
-| `environment`          | Environment to use (dev or prod)                   | No       | `prod`  |
-| `upload-chunk-size`    | Chunk size for large file uploads (bytes)          | No       |         |
-| `enableCrossOsArchive` | Enable cross-OS cache compatibility                | No       | `false` |
-| `fail-on-cache-miss`   | Fail workflow if cache entry not found             | No       | `false` |
-| `lookup-only`          | Only check cache existence without downloading     | No       | `false` |
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `s3-bucket` | S3 bucket name for cache storage | Yes | - |
+| `s3-prefix` | S3 key prefix for cache objects | No | `ccache/` |
+| `proxy-port` | Port for the HTTP proxy server | No | `8080` |
+| `aws-region` | AWS region | No | `us-east-1` |
 
 ## Outputs
 
-| Output      | Description                                    |
-|-------------|------------------------------------------------|
-| `cache-hit` | Boolean indicating exact match for primary key |
+| Output | Description |
+|--------|-------------|
+| `proxy-url` | URL of the running proxy server (e.g., `http://localhost:8080`) |
+| `proxy-pid` | Process ID of the proxy server |
 
-## Environment Configuration
+## Prerequisites
 
-The action supports two environments:
+- AWS credentials must be configured before using this action
+- The specified S3 bucket must exist and be accessible
+- The GitHub Actions runner must have network access to AWS S3
 
-- **dev**: Development environment with development S3 bucket
-- **prod**: Production environment with production S3 bucket (default)
+## How it works
 
-Each environment has its own preconfigured S3 bucket and AWS Cognito pool for isolation and security.
+1. Installs mise for tool version management
+2. Uses mise to install Python 3.11 and Poetry 2.2.1
+3. Installs the Python proxy package and its dependencies
+4. Starts the HTTP proxy server in the background
+5. The proxy translates HTTP GET/PUT requests to S3 operations
+6. ccache uses the proxy as its remote storage backend
+7. The proxy runs until the workflow completes (no manual cleanup needed)
 
-## Security
+## S3 Bucket Setup
 
-- Uses GitHub Actions OIDC tokens for secure authentication
-- No long-lived AWS credentials required
-- Branch-specific paths provide isolation between branches
+Create an S3 bucket for your ccache storage:
+
+```bash
+aws s3 mb s3://my-ccache-bucket
+```
+
+Ensure your AWS credentials have the following permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::my-ccache-bucket/*"
+    }
+  ]
+}
+```
+
+## Development
+
+### Running tests locally
+
+```bash
+# Install dependencies
+poetry install
+
+# Run tests
+poetry run pytest
+
+# Run tests with coverage
+poetry run pytest --cov=ccache_s3_proxy --cov-report=term-missing
+```
+
+### Running the proxy locally
+
+```bash
+export S3_BUCKET=my-bucket
+export S3_PREFIX=ccache/
+export PROXY_PORT=8080
+
+poetry run ccache-s3-proxy
+```
+
+## License
+
+MIT
+
+## Author
+
+Sonar CFamily

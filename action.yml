@@ -1,35 +1,24 @@
-name: S3 Cache action
+name: S3 Cache proxy action
 description: Cache files on S3 with branch-specific paths for granular permissions
 author: SonarSource
 
 inputs:
-  path:
-    description: A list of files, directories, and wildcard patterns to cache and restore
-    required: true
-  key:
-    description: An explicit key for restoring and saving the cache
-    required: true
-  restore-keys:
-    description: An ordered list of prefix-matched keys to use for restoring stale cache if no cache hit occurred for key
-  upload-chunk-size:
-    description: The chunk size used to split up large files during upload, in bytes
-  enableCrossOsArchive:
-    description: An optional boolean when enabled, allows windows runners to save or restore caches that can be restored or saved respectively on other platforms
-    default: false
-  fail-on-cache-miss:
-    description: Fail the workflow if cache entry is not found
-    default: false
-  lookup-only:
-    description: Check if a cache entry exists for the given input(s) (key, restore-keys) without downloading the cache
-    default: false
+  s3-prefix:
+    description: 'S3 key prefix for cache objects'
+    required: false
+    default: 'cache'
+  proxy-port:
+    description: 'Port for the HTTP proxy server'
+    required: false
+    default: '8080'
   environment:
     description: Environment to use (dev or prod)
     default: prod
 
 outputs:
-  cache-hit:
-    description: A boolean value to indicate an exact match was found for the primary key
-    value: ${{ steps.cache.outputs.cache-hit }}
+  proxy-url:
+    description: 'URL of the running proxy server'
+    value: 127.0.0.1:${{ inputs.proxy-port }}
 
 runs:
   using: composite
@@ -93,61 +82,44 @@ runs:
         echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> $GITHUB_ENV
         echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> $GITHUB_ENV
 
-    - name: Prepare cache keys
+    - name: Install mise
+      uses: jdx/mise-action@9dc7d5dd454262207dea3ab5a06a3df6afc8ff26 # v3.4.1
+      with:
+        version: 2025.11.2
+        mise_toml: |
+          [tools]
+          python = "3.11"
+          poetry = "2.2.1"
+
+    - name: Install proxy dependencies
       shell: bash
-      id: prepare-keys
       run: |
-        # Use GITHUB_HEAD_REF for PR events, GITHUB_REF for push events
-        BRANCH_NAME="${GITHUB_HEAD_REF:-$GITHUB_REF}"
-        BRANCH_KEY="${BRANCH_NAME}/${{ inputs.key }}"
-        echo "branch-key=${BRANCH_KEY}" >> $GITHUB_OUTPUT
+        cd ${{ github.action_path }}
+        poetry install --no-interaction --no-root
 
-        # Process restore keys: keep branch-specific keys and add fallback to default branch
-        if [ -n "${{ inputs.restore-keys }}" ]; then
-          RESTORE_KEYS=""
-          # First, add branch-specific restore keys
-          while IFS= read -r line; do
-            if [ -n "$line" ]; then
-              if [ -n "$RESTORE_KEYS" ]; then
-                RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"${BRANCH_NAME}/${line}"
-              else
-                RESTORE_KEYS="${BRANCH_NAME}/${line}"
-              fi
-            fi
-          done <<< "${{ inputs.restore-keys }}"
+    - name: Start S3 HTTP Cache Proxy
+      id: start-proxy
+      shell: bash
+      run: |
+        cd ${{ github.action_path }}
+        poetry run ccache-s3-proxy &
+        PROXY_PID=$!
+        echo "proxy-url=127.0.0.1:${PROXY_PORT}" >> $GITHUB_OUTPUT
+        # echo "CCACHE_PROXY_PID=$PROXY_PID" >> $GITHUB_ENV
 
-          # Get the default branch dynamically using GitHub API
-          DEFAULT_BRANCH=$(curl -s -H "Authorization: token ${{ github.token }}" \
-            "https://api.github.com/repos/${{ github.repository }}" | \
-            jq -r '.default_branch')
-
-          # Then, add default branch fallback keys (with dynamic default branch)
-          while IFS= read -r line; do
-            if [ -n "$line" ]; then
-              RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"refs/heads/${DEFAULT_BRANCH}/${line}"
-            fi
-          done <<< "${{ inputs.restore-keys }}"
-
-          echo "branch-restore-keys<<EOF" >> $GITHUB_OUTPUT
-          echo "$RESTORE_KEYS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+        # Verify proxy is running
+        if ! kill -0 $PROXY_PID 2>/dev/null; then
+          echo "Error: Proxy failed to start"
+          exit 1
         fi
 
-    - name: Cache on S3
-      uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
-      id: cache
+        echo "Proxy started successfully on port ${{ inputs.proxy-port }} (PID: $PROXY_PID)"
       env:
-        RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
-        AWS_DEFAULT_REGION: eu-central-1
+        S3_BUCKET: sonarsource-s3-cache-${{ inputs.environment }}-bucket
+        S3_PREFIX: ${{ github.repository }}/${{ inputs.s3-prefix }}
+        PROXY_PORT: ${{ inputs.proxy-port }}
         AWS_REGION: eu-central-1
-      with:
-        path: ${{ inputs.path }}
-        key: ${{ steps.prepare-keys.outputs.branch-key }}
-        restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
-        upload-chunk-size: ${{ inputs.upload-chunk-size }}
-        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
-        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
-        lookup-only: ${{ inputs.lookup-only }}
+        DEFAULT_REGION: eu-central-1
 
 branding:
   icon: upload-cloud

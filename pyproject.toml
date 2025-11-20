@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "ccache-s3-proxy"
+version = "0.1.0"
+description = "HTTP proxy for ccache remote storage backed by AWS S3"
+authors = ["Massimo Paladin <massimo.paladin@sonarsource.com>"]
+readme = "README.md"
+packages = [{include = "ccache_s3_proxy"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+boto3 = "^1.34.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+moto = "^4.2.0"
+
+[tool.poetry.scripts]
+ccache-s3-proxy = "ccache_s3_proxy.server:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

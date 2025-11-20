@@ -86,7 +86,7 @@ jobs:
 2. Uses mise to install Python 3.11 and Poetry 2.2.1
 3. Installs the Python proxy package and its dependencies
 4. Starts the HTTP proxy server in the background
-5. The proxy translates HTTP GET/PUT requests to S3 operations
+5. The proxy translates HTTP GET/POST requests to S3 operations
 6. ccache uses the proxy as its remote storage backend
 7. The proxy runs until the workflow completes (no manual cleanup needed)
 

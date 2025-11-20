@@ -54,9 +54,18 @@ def run_server(
 
 def main() -> None:
     """Main entry point for the server."""
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    log_file = os.environ.get("PROXY_LOG_FILE")
+
+    log_config = {
+        "level": logging.INFO,
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    }
+
+    if log_file:
+        log_config["filename"] = log_file
+        log_config["filemode"] = "a"
+
+    logging.basicConfig(**log_config)
 
     port = int(os.environ.get("PROXY_PORT", "8080"))
     s3_bucket = os.environ.get("S3_BUCKET", "ccache-storage")

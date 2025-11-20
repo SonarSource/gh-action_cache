@@ -3,6 +3,9 @@ description: Cache files on S3 with branch-specific paths for granular permissio
 author: SonarSource
 
 inputs:
+  s3-bucket:
+    description: 'S3 bucket name for cache storage'
+    required: true
   s3-prefix:
     description: 'S3 key prefix for cache objects'
     required: false
@@ -23,69 +26,10 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Authenticate to AWS
-      shell: bash
-      env:
-        POOL_ID: ${{ inputs.environment == 'prod' && 'eu-central-1:511fe374-ae4f-46d0-adb7-9246e570c7f4' || 'eu-central-1:3221c6ea-3f67-4fd8-a7ff-7426f96add89' }}
-        AWS_ACCOUNT_ID: ${{ inputs.environment == 'prod' && '275878209202' || '460386131003' }}
-        IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
-        AUDIENCE: cognito-identity.amazonaws.com
-        AWS_REGION: eu-central-1
-      run: |
-        # Get GitHub Actions ID token using script
-        ACCESS_TOKEN=$("$GITHUB_ACTION_PATH/scripts/get-github-token.sh")
-        echo "::add-mask::$ACCESS_TOKEN"
-
-        # Get Identity ID
-        identityId=$(aws cognito-identity get-id \
-        --identity-pool-id "$POOL_ID" \
-        --account-id "$AWS_ACCOUNT_ID" \
-        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}' \
-        --query 'IdentityId' --output text)
-
-        # Validate Identity ID was obtained
-        if [[ "$identityId" == "null" || -z "$identityId" ]]; then
-          echo "::error::Failed to obtain Identity ID from Cognito Identity Pool"
-          echo "::error::Check identity pool configuration and IAM roles"
-          exit 1
-        fi
-
-        # Get and validate AWS credentials
-        awsCredentials=$(aws cognito-identity get-credentials-for-identity \
-        --identity-id "$identityId" \
-        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}')
-
-        AWS_ACCESS_KEY_ID=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
-        AWS_SECRET_ACCESS_KEY=$(echo "$awsCredentials" | jq -r ".Credentials.SecretKey")
-        AWS_SESSION_TOKEN=$(echo "$awsCredentials" | jq -r ".Credentials.SessionToken")
-
-        echo "::add-mask::$AWS_ACCESS_KEY_ID"
-        echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
-        echo "::add-mask::$AWS_SESSION_TOKEN"
-
-        if [[ "$AWS_ACCESS_KEY_ID" == "null" || -z "$AWS_ACCESS_KEY_ID" ]]; then
-          echo "::error::Failed to obtain AWS Access Key ID"
-          exit 1
-        fi
-
-        if [[ "$AWS_SECRET_ACCESS_KEY" == "null" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
-          echo "::error::Failed to obtain AWS Secret Access Key"
-          exit 1
-        fi
-
-        if [[ "$AWS_SESSION_TOKEN" == "null" || -z "$AWS_SESSION_TOKEN" ]]; then
-          echo "::error::Failed to obtain AWS Session Token"
-          exit 1
-        fi
-
-        echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> $GITHUB_ENV
-        echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> $GITHUB_ENV
-        echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> $GITHUB_ENV
-
     - name: Install mise
       uses: jdx/mise-action@9dc7d5dd454262207dea3ab5a06a3df6afc8ff26 # v3.4.1
       with:
-        version: 2025.11.2
+        version: 2025.11.3
         mise_toml: |
           [tools]
           python = "3.11"
@@ -102,6 +46,7 @@ runs:
       shell: bash
       run: |
         cd ${{ github.action_path }}
+        source scripts/get-aws-credentials.sh
         poetry run ccache-s3-proxy &
         PROXY_PID=$!
         echo "proxy-url=127.0.0.1:${PROXY_PORT}" >> $GITHUB_OUTPUT
@@ -115,9 +60,10 @@ runs:
 
         echo "Proxy started successfully on port ${{ inputs.proxy-port }} (PID: $PROXY_PID)"
       env:
-        S3_BUCKET: sonarsource-s3-cache-${{ inputs.environment }}-bucket
-        S3_PREFIX: ${{ github.repository }}/${{ inputs.s3-prefix }}
+        S3_BUCKET: ${{ inputs.s3-bucket }}
+        S3_PREFIX: ${{ inputs.s3-prefix }}
         PROXY_PORT: ${{ inputs.proxy-port }}
+        PROXY_LOG_FILE: ${{ github.workspace }}/proxy.log
         AWS_REGION: eu-central-1
         DEFAULT_REGION: eu-central-1
 

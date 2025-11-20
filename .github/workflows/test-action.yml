@@ -64,7 +64,7 @@ jobs:
           fi
 
           echo "hello world!" > file.txt
-          curl -s -X POST --data-binary file.txt http://${{ steps.proxy.outputs.proxy-url }}/file-txt
+          curl -s -X PUT --data-binary file.txt http://${{ steps.proxy.outputs.proxy-url }}/file-txt
 
           curl -s -X HEAD http://${{ steps.proxy.outputs.proxy-url }}/file-txt
           if [ $? -ne 0 ]; then

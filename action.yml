@@ -122,12 +122,19 @@ runs:
             "https://api.github.com/repos/${{ github.repository }}" | \
             jq -r '.default_branch')
 
-          # Then, add default branch fallback keys (with dynamic default branch)
-          while IFS= read -r line; do
-            if [ -n "$line" ]; then
-              RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"refs/heads/${DEFAULT_BRANCH}/${line}"
-            fi
-          done <<< "${{ inputs.restore-keys }}"
+          # Only allow fallback to supported default branches
+          case "$DEFAULT_BRANCH" in
+            main|master|branch-*)
+              while IFS= read -r line; do
+                if [ -n "$line" ]; then
+                  RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"refs/heads/${DEFAULT_BRANCH}/${line}"
+                fi
+              done <<< "${{ inputs.restore-keys }}"
+              ;;
+            *)
+              echo "::warning::Default branch '$DEFAULT_BRANCH' is not supported for cache fallback. Supported branches: main, master, branch-*"
+              ;;
+          esac
 
           echo "branch-restore-keys<<EOF" >> $GITHUB_OUTPUT
           echo "$RESTORE_KEYS" >> $GITHUB_OUTPUT

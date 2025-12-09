@@ -25,6 +25,8 @@ inputs:
   environment:
     description: Environment to use (dev or prod)
     default: prod
+  fallback-branch:
+    description: Optional maintenance branch for fallback restore keys (pattern branch-*). If not set, the repository default branch is used.
 
 outputs:
   cache-hit:
@@ -97,49 +99,13 @@ runs:
     - name: Prepare cache keys
       shell: bash
       id: prepare-keys
-      run: |
-        # Use GITHUB_HEAD_REF for PR events, GITHUB_REF for push events
-        BRANCH_NAME="${GITHUB_HEAD_REF:-$GITHUB_REF}"
-        BRANCH_KEY="${BRANCH_NAME}/${{ inputs.key }}"
-        echo "branch-key=${BRANCH_KEY}" >> $GITHUB_OUTPUT
-
-        # Process restore keys: keep branch-specific keys and add fallback to default branch
-        if [ -n "${{ inputs.restore-keys }}" ]; then
-          RESTORE_KEYS=""
-          # First, add branch-specific restore keys
-          while IFS= read -r line; do
-            if [ -n "$line" ]; then
-              if [ -n "$RESTORE_KEYS" ]; then
-                RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"${BRANCH_NAME}/${line}"
-              else
-                RESTORE_KEYS="${BRANCH_NAME}/${line}"
-              fi
-            fi
-          done <<< "${{ inputs.restore-keys }}"
-
-          # Get the default branch dynamically using GitHub API
-          DEFAULT_BRANCH=$(curl -s -H "Authorization: token ${{ github.token }}" \
-            "https://api.github.com/repos/${{ github.repository }}" | \
-            jq -r '.default_branch')
-
-          # Only allow fallback to supported default branches
-          case "$DEFAULT_BRANCH" in
-            main|master|branch-*)
-              while IFS= read -r line; do
-                if [ -n "$line" ]; then
-                  RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"refs/heads/${DEFAULT_BRANCH}/${line}"
-                fi
-              done <<< "${{ inputs.restore-keys }}"
-              ;;
-            *)
-              echo "::warning::Default branch '$DEFAULT_BRANCH' is not supported for cache fallback. Supported branches: main, master, branch-*"
-              ;;
-          esac
-
-          echo "branch-restore-keys<<EOF" >> $GITHUB_OUTPUT
-          echo "$RESTORE_KEYS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-        fi
+      env:
+        INPUT_KEY: ${{ inputs.key }}
+        INPUT_RESTORE_KEYS: ${{ inputs.restore-keys }}
+        INPUT_FALLBACK_BRANCH: ${{ inputs.fallback-branch }}
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: "$GITHUB_ACTION_PATH/scripts/prepare-keys.sh"
 
     - name: Cache on S3
       uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0

@@ -66,6 +66,7 @@ jobs:
           go-${{ runner.os }}-${{ hashFiles('**/go.mod') }}
           go-${{ runner.os }}-
         fail-on-cache-miss: false
+        fallback-branch: refs/heads/branch-2
         environment: dev
     - name: Check Go cache hit result
       run: |

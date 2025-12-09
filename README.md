@@ -71,6 +71,7 @@ For a feature branch `feature/new-ui`, this will search for:
 | `path`                 | Files, directories, and wildcard patterns to cache | Yes      |         |
 | `key`                  | Explicit key for restoring and saving cache        | Yes      |         |
 | `restore-keys`         | Ordered list of prefix-matched keys for fallback   | No       |         |
+| `fallback-branch`      | Optional maintenance branch for fallback restore keys (pattern: `branch-*`). If not set, the repository default branch is used. | No |         |
 | `environment`          | Environment to use (dev or prod)                   | No       | `prod`  |
 | `upload-chunk-size`    | Chunk size for large file uploads (bytes)          | No       |         |
 | `enableCrossOsArchive` | Enable cross-OS cache compatibility                | No       | `false` |

@@ -14,7 +14,7 @@ inputs:
   upload-chunk-size:
     description: The chunk size used to split up large files during upload, in bytes
   enableCrossOsArchive:
-    description: An optional boolean when enabled, allows windows runners to save or restore caches that can be restored or saved respectively on other platforms
+    description: When enabled, allows to save or restore caches that can be restored or saved respectively on other platforms
     default: false
   fail-on-cache-miss:
     description: Fail the workflow if cache entry is not found
@@ -31,12 +31,53 @@ inputs:
 outputs:
   cache-hit:
     description: A boolean value to indicate an exact match was found for the primary key
-    value: ${{ steps.cache.outputs.cache-hit }}
+    value: ${{ steps.github-cache.outputs.cache-hit || steps.s3-cache.outputs.cache-hit }}
 
 runs:
   using: composite
   steps:
+    - name: Determine repository visibility
+      id: repo-visibility
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+      run: |
+        # If visibility is not available in the event, try to get it from the API
+        if [[ -z "$REPO_VISIBILITY" || "$REPO_VISIBILITY" = "null" ]]; then
+          REPO_VISIBILITY=$(curl -s -H "Authorization: token ${{ github.token }}" \
+            "https://api.github.com/repos/${{ github.repository }}" | \
+            jq -r '.visibility // "private"')
+        fi
+        echo "Repository visibility: $REPO_VISIBILITY"
+
+        if [[ "$REPO_VISIBILITY" == "public" ]]; then
+          CACHE_BACKEND="github"
+          echo "Using GitHub cache for public repository"
+        else
+          CACHE_BACKEND="s3"
+          echo "Using S3 cache for private/internal repository"
+        fi
+
+        echo "cache-backend=$CACHE_BACKEND" >> "$GITHUB_OUTPUT"
+        echo "repo-visibility=$REPO_VISIBILITY" >> "$GITHUB_OUTPUT"
+
+    - name: Cache with GitHub Actions (public repos)
+      if: steps.repo-visibility.outputs.cache-backend == 'github'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      id: github-cache
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}
+        upload-chunk-size: ${{ inputs.upload-chunk-size }}
+        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
+        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
+        lookup-only: ${{ inputs.lookup-only }}
+
+    # Cache with S3 (private/internal repos)
     - name: Authenticate to AWS
+      if: steps.repo-visibility.outputs.cache-backend == 's3'
       id: aws-auth
       shell: bash
       env:
@@ -72,31 +113,30 @@ runs:
         AWS_ACCESS_KEY_ID=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
         AWS_SECRET_ACCESS_KEY=$(echo "$awsCredentials" | jq -r ".Credentials.SecretKey")
         AWS_SESSION_TOKEN=$(echo "$awsCredentials" | jq -r ".Credentials.SessionToken")
-
-        echo "::add-mask::$AWS_ACCESS_KEY_ID"
-        echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
-        echo "::add-mask::$AWS_SESSION_TOKEN"
-
         if [[ "$AWS_ACCESS_KEY_ID" == "null" || -z "$AWS_ACCESS_KEY_ID" ]]; then
           echo "::error::Failed to obtain AWS Access Key ID"
           exit 1
         fi
-
         if [[ "$AWS_SECRET_ACCESS_KEY" == "null" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
           echo "::error::Failed to obtain AWS Secret Access Key"
           exit 1
         fi
-
         if [[ "$AWS_SESSION_TOKEN" == "null" || -z "$AWS_SESSION_TOKEN" ]]; then
           echo "::error::Failed to obtain AWS Session Token"
           exit 1
         fi
+        echo "::add-mask::$AWS_ACCESS_KEY_ID"
+        echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
+        echo "::add-mask::$AWS_SESSION_TOKEN"
 
-        echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> "$GITHUB_OUTPUT"
-        echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> "$GITHUB_OUTPUT"
-        echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> "$GITHUB_OUTPUT"
+        {
+          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+          echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Prepare cache keys
+      if: steps.repo-visibility.outputs.cache-backend == 's3'
       shell: bash
       id: prepare-keys
       env:
@@ -105,11 +145,12 @@ runs:
         INPUT_FALLBACK_BRANCH: ${{ inputs.fallback-branch }}
         GITHUB_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
-      run: "$GITHUB_ACTION_PATH/scripts/prepare-keys.sh"
+      run: $GITHUB_ACTION_PATH/scripts/prepare-keys.sh
 
     - name: Cache on S3
+      if: steps.repo-visibility.outputs.cache-backend == 's3'
       uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
-      id: cache
+      id: s3-cache
       env:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
         AWS_DEFAULT_REGION: eu-central-1

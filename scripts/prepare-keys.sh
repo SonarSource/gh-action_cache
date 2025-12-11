@@ -22,9 +22,8 @@ BRANCH_KEY="${BRANCH_NAME}/${INPUT_KEY}"
 echo "branch-key=${BRANCH_KEY}" >> "$GITHUB_OUTPUT"
 
 # Process restore keys: keep branch-specific keys and add fallback to default branch
-if [ -n "${INPUT_RESTORE_KEYS:-}" ]; then
+if [[ -n "${INPUT_RESTORE_KEYS:-}" ]]; then
   RESTORE_KEYS=""
-
   # First, add branch-specific restore keys
   while IFS= read -r line; do
     if [ -n "$line" ]; then
@@ -52,7 +51,7 @@ if [ -n "${INPUT_RESTORE_KEYS:-}" ]; then
       main|master|branch-*)
         # Add fallback branch restore keys
         while IFS= read -r line; do
-          if [ -n "$line" ]; then
+          if [[ -n "$line" ]]; then
             RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"refs/heads/${FALLBACK_BRANCH}/${line}"
           fi
         done <<< "$INPUT_RESTORE_KEYS"
@@ -65,7 +64,9 @@ if [ -n "${INPUT_RESTORE_KEYS:-}" ]; then
     echo "::warning::Unable to determine fallback branch; skipping fallback restore keys."
   fi
 
-  echo "branch-restore-keys<<EOF" >> "$GITHUB_OUTPUT"
-  echo "$RESTORE_KEYS" >> "$GITHUB_OUTPUT"
-  echo "EOF" >> "$GITHUB_OUTPUT"
+  {
+    echo "branch-restore-keys<<EOF"
+    echo "$RESTORE_KEYS"
+    echo "EOF"
+  } >> "$GITHUB_OUTPUT"
 fi

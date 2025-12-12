@@ -26,17 +26,18 @@ Adaptive cache action that automatically chooses the appropriate caching backend
 
 ## Inputs
 
-| Input                  | Description                                                                                                                     | Required | Default |
-|------------------------|---------------------------------------------------------------------------------------------------------------------------------|----------|---------|
-| `path`                 | Files, directories, and wildcard patterns to cache                                                                              | Yes      |         |
-| `key`                  | Explicit key for restoring and saving cache                                                                                     | Yes      |         |
-| `restore-keys`         | Ordered list of prefix-matched keys for fallback                                                                                | No       |         |
-| `fallback-branch`      | Optional maintenance branch for fallback restore keys (pattern: `branch-*`). If not set, the repository default branch is used. | No       |         |
-| `environment`          | Environment to use (dev or prod, S3 cache only)                                                                                 | No       | `prod`  |
-| `upload-chunk-size`    | Chunk size for large file uploads (bytes)                                                                                       | No       |         |
-| `enableCrossOsArchive` | Enable cross-OS cache compatibility                                                                                             | No       | `false` |
-| `fail-on-cache-miss`   | Fail workflow if cache entry not found                                                                                          | No       | `false` |
-| `lookup-only`          | Only check cache existence without downloading                                                                                  | No       | `false` |
+| Input                  | Description                                                                                                                                      | Required | Default |
+|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|----------|---------|
+| `path`                 | Files, directories, and wildcard patterns to cache                                                                                               | Yes      |         |
+| `key`                  | Explicit key for restoring and saving cache                                                                                                      | Yes      |         |
+| `restore-keys`         | Ordered list of prefix-matched keys for fallback                                                                                                 | No       |         |
+| `fallback-branch`      | Optional maintenance branch for fallback restore keys (pattern: `branch-*`, S3 backend only). If not set, the repository default branch is used. | No       |         |
+| `environment`          | Environment to use (dev or prod, S3 backend only)                                                                                                | No       | `prod`  |
+| `upload-chunk-size`    | Chunk size for large file uploads (bytes)                                                                                                        | No       |         |
+| `enableCrossOsArchive` | Enable cross-OS cache compatibility                                                                                                              | No       | `false` |
+| `fail-on-cache-miss`   | Fail workflow if cache entry not found                                                                                                           | No       | `false` |
+| `lookup-only`          | Only check cache existence without downloading                                                                                                   | No       | `false` |
+| `backend`              | Force specific backend: `github` or `s3`                                                                                                         | No       |         |
 
 ## Outputs
 

@@ -23,10 +23,13 @@ inputs:
     description: Check if a cache entry exists for the given input(s) (key, restore-keys) without downloading the cache
     default: false
   environment:
-    description: Environment to use (dev or prod)
+    description: Environment to use ('dev' or 'prod', 's3' backend only).
     default: prod
   fallback-branch:
-    description: Optional maintenance branch for fallback restore keys (pattern branch-*). If not set, the repository default branch is used.
+    description: Optional maintenance branch for fallback restore keys (pattern 'branch-*', 's3' backend only). If not set, the repository
+      default branch is used.
+  backend:
+    description: Force cache backend ('github' or 's3'). If not set, automatically determined based on repository visibility.
 
 outputs:
   cache-hit:
@@ -36,34 +39,39 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Determine repository visibility
-      id: repo-visibility
+    - name: Determine cache backend
+      id: cache-backend
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
         REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        FORCED_BACKEND: ${{ inputs.backend }}
       run: |
-        # If visibility is not available in the event, try to get it from the API
-        if [[ -z "$REPO_VISIBILITY" || "$REPO_VISIBILITY" = "null" ]]; then
-          REPO_VISIBILITY=$(curl -s -H "Authorization: token ${{ github.token }}" \
-            "https://api.github.com/repos/${{ github.repository }}" | \
-            jq -r '.visibility // "private"')
-        fi
-        echo "Repository visibility: $REPO_VISIBILITY"
-
-        if [[ "$REPO_VISIBILITY" == "public" ]]; then
-          CACHE_BACKEND="github"
-          echo "Using GitHub cache for public repository"
+        if [[ "$FORCED_BACKEND" == "github" || "$FORCED_BACKEND" == "s3" ]]; then
+          CACHE_BACKEND="$FORCED_BACKEND"
+          echo "Using forced backend: $CACHE_BACKEND"
         else
-          CACHE_BACKEND="s3"
-          echo "Using S3 cache for private/internal repository"
+          # If visibility is not available in the event, try to get it from the API
+          if [[ -z "$REPO_VISIBILITY" || "$REPO_VISIBILITY" = "null" ]]; then
+            REPO_VISIBILITY=$(curl -s -H "Authorization: token ${{ github.token }}" \
+              "https://api.github.com/repos/${{ github.repository }}" | \
+              jq -r '.visibility // "private"')
+          fi
+          echo "Repository visibility: $REPO_VISIBILITY"
+
+          if [[ "$REPO_VISIBILITY" == "public" ]]; then
+            CACHE_BACKEND="github"
+            echo "Using GitHub cache for public repository"
+          else
+            CACHE_BACKEND="s3"
+            echo "Using S3 cache for private/internal repository"
+          fi
         fi
 
         echo "cache-backend=$CACHE_BACKEND" >> "$GITHUB_OUTPUT"
-        echo "repo-visibility=$REPO_VISIBILITY" >> "$GITHUB_OUTPUT"
 
     - name: Cache with GitHub Actions (public repos)
-      if: steps.repo-visibility.outputs.cache-backend == 'github'
+      if: steps.cache-backend.outputs.cache-backend == 'github'
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       id: github-cache
       with:
@@ -77,7 +85,7 @@ runs:
 
     # Cache with S3 (private/internal repos)
     - name: Authenticate to AWS
-      if: steps.repo-visibility.outputs.cache-backend == 's3'
+      if: steps.cache-backend.outputs.cache-backend == 's3'
       id: aws-auth
       shell: bash
       env:
@@ -136,7 +144,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
     - name: Prepare cache keys
-      if: steps.repo-visibility.outputs.cache-backend == 's3'
+      if: steps.cache-backend.outputs.cache-backend == 's3'
       shell: bash
       id: prepare-keys
       env:
@@ -148,13 +156,14 @@ runs:
       run: $GITHUB_ACTION_PATH/scripts/prepare-keys.sh
 
     - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+      if: steps.cache-backend.outputs.cache-backend == 's3'
       with:
         aws-region: eu-central-1
         aws-access-key-id: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
         aws-session-token: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
     - name: Cache on S3
-      if: steps.repo-visibility.outputs.cache-backend == 's3'
+      if: steps.cache-backend.outputs.cache-backend == 's3'
       uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
       id: s3-cache
       env:

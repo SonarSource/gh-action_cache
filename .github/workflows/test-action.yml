@@ -7,12 +7,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  test-github-cache:
     runs-on: github-ubuntu-latest-s
     permissions:
       id-token: write
       contents: read
-
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
@@ -22,12 +21,10 @@ jobs:
       id: cache-python
       uses: ./
       with:
-        path: |
-          ~/.cache/pip
+        path: ~/.cache/pip
         key: python-${{ runner.os }}-pytest-requests
         restore-keys: python-${{ runner.os }}-
-        environment: dev
-
+        backend: github
     - name: Check cache hit result
       run: |
         echo "Cache hit: ${{ steps.cache-python.outputs.cache-hit }}"
@@ -43,12 +40,46 @@ jobs:
     - name: Run tests
       run: python -m pytest --version
 
-  cache-with-fallback:
+  test-s3-cache:
     runs-on: github-ubuntu-latest-s
     permissions:
       id-token: write
       contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          version: 2025.7.12
+      - name: Cache Python dependencies
+        id: cache-python
+        uses: ./
+        with:
+          path: ~/.cache/pip
+          key: python-${{ runner.os }}-pytest-requests
+          restore-keys: python-${{ runner.os }}-
+          environment: dev
+          backend: s3
 
+      - name: Check cache hit result
+        run: |
+          echo "Cache hit: ${{ steps.cache-python.outputs.cache-hit }}"
+          if [ "${{ steps.cache-python.outputs.cache-hit }}" == "true" ]; then
+            echo "✅ Cache was found and restored"
+          else
+            echo "❌ Cache was not found, will need to rebuild"
+          fi
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest requests
+      - name: Run tests
+        run: python -m pytest --version
+
+  test-s3-cache-with-fallback:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
@@ -68,6 +99,7 @@ jobs:
         fail-on-cache-miss: false
         fallback-branch: refs/heads/branch-2
         environment: dev
+        backend: s3
     - name: Check Go cache hit result
       run: |
         echo "Go cache hit: ${{ steps.cache-go.outputs.cache-hit }}"

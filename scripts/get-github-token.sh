@@ -15,7 +15,7 @@
 #   1: Failure - unable to retrieve token after all retry attempts
 #
 
-set -euo pipefail
+set -euox pipefail
 
 readonly MAX_ATTEMPTS=5
 readonly INITIAL_TIMEOUT=10
@@ -47,7 +47,14 @@ get_github_token() {
     if [[ $curl_exit -eq 0 ]]; then
       http_code=$(echo "$response" | tail -n 1)
       local token
-      token=$(echo "$response" | sed '$d' | jq -r ".value" 2>/dev/null)
+
+      echo "$response" > /tmp/response_debug.log
+      local response_body
+      response_body=$(echo "$response" | sed '$d')
+      echo "$response_body" > /tmp/response_body_debug.log
+      token=$(echo "$response_body" | jq -r ".value" 2>/tmp/jq_stderr.log)
+
+      echo "$token" > /tmp/token_debug.log
 
       if [[ "$token" != "null" && -n "$token" ]]; then
         echo "$token"

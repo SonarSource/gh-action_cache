@@ -155,13 +155,6 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: $GITHUB_ACTION_PATH/scripts/prepare-keys.sh
 
-    - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
-      if: steps.cache-backend.outputs.cache-backend == 's3'
-      with:
-        aws-region: eu-central-1
-        aws-access-key-id: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
-        aws-session-token: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
     - name: Cache on S3
       if: steps.cache-backend.outputs.cache-backend == 's3'
       uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
@@ -170,6 +163,9 @@ runs:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
         AWS_DEFAULT_REGION: eu-central-1
         AWS_REGION: eu-central-1
+        AWS_ACCESS_KEY_ID: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
       with:
         path: ${{ inputs.path }}
         key: ${{ steps.prepare-keys.outputs.branch-key }}

@@ -109,6 +109,38 @@ Each environment has its own preconfigured S3 bucket and AWS Cognito pool for is
 - No long-lived AWS credentials required
 - Branch-specific paths provide isolation between branches
 
+### AWS Credential Isolation
+
+This action creates a dedicated AWS profile (`gh-action-cache-<run_id>`) to store its credentials.
+This ensures that cache operations work correctly even when you configure your own AWS credentials later in the workflow.
+
+**Why this matters**: The cache save operation happens in a GitHub Actions post-step (after your job completes).
+If you use `aws-actions/configure-aws-credentials` during your job, it would normally override the cache action's credentials,
+causing cache save to fail.
+
+**Example workflow that works correctly**:
+
+```yaml
+jobs:
+  build:
+    steps:
+      # Cache action authenticates and stores credentials in isolated profile
+      - uses: SonarSource/gh-action-cache@v1
+        with:
+          path: ~/.cache
+          key: my-cache-${{ hashFiles('**/lockfile') }}
+
+      # Your own AWS authentication - does NOT affect cache credentials
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789:role/my-role
+          aws-region: us-east-1
+
+      - run: aws s3 ls  # Uses YOUR credentials
+
+      # Post-step: Cache save uses isolated profile - works correctly!
+```
+
 ### Cleanup Policy
 
 The AWS S3 bucket lifecycle rules apply to delete the old files. The content from default branches expires in 60 days and for feature

@@ -94,6 +94,7 @@ runs:
         IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
         AUDIENCE: cognito-identity.amazonaws.com
         AWS_REGION: eu-central-1
+        GITHUB_RUN_ID: ${{ github.run_id }}
       run: |
         # Get GitHub Actions ID token using script
         ACCESS_TOKEN=$("$GITHUB_ACTION_PATH/scripts/get-github-token.sh")
@@ -137,11 +138,21 @@ runs:
         echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
         echo "::add-mask::$AWS_SESSION_TOKEN"
 
-        {
-          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
-          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
-          echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN"
-        } >> "$GITHUB_OUTPUT"
+        # Create a unique AWS profile to isolate credentials from user-configured AWS credentials
+        # This prevents credential override when users call aws-actions/configure-aws-credentials
+        # between the cache restore (main step) and cache save (post step)
+        PROFILE_NAME="gh-action-cache-${GITHUB_RUN_ID}"
+
+        mkdir -p ~/.aws
+        chmod 700 ~/.aws
+
+        # Write credentials to a dedicated profile using AWS CLI (handles file format and permissions correctly)
+        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile "$PROFILE_NAME"
+        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile "$PROFILE_NAME"
+        aws configure set aws_session_token "$AWS_SESSION_TOKEN" --profile "$PROFILE_NAME"
+        aws configure set region eu-central-1 --profile "$PROFILE_NAME"
+        echo "Created AWS profile: $PROFILE_NAME"
+        echo "AWS_PROFILE=$PROFILE_NAME" >> "$GITHUB_OUTPUT"
 
     - name: Prepare cache keys
       if: steps.cache-backend.outputs.cache-backend == 's3'
@@ -163,9 +174,10 @@ runs:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
         AWS_DEFAULT_REGION: eu-central-1
         AWS_REGION: eu-central-1
-        AWS_ACCESS_KEY_ID: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
-        AWS_SESSION_TOKEN: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
+        # Use AWS profile instead of direct credentials to prevent override issues
+        # When users configure their own AWS credentials mid-job, the profile remains isolated
+        AWS_PROFILE: ${{ steps.aws-auth.outputs.AWS_PROFILE }}
+        AWS_DEFAULT_PROFILE: ${{ steps.aws-auth.outputs.AWS_PROFILE }}
       with:
         path: ${{ inputs.path }}
         key: ${{ steps.prepare-keys.outputs.branch-key }}

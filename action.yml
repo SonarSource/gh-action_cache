@@ -153,6 +153,10 @@ runs:
         aws configure set region eu-central-1 --profile "$PROFILE_NAME"
         echo "Created AWS profile: $PROFILE_NAME"
         echo "AWS_PROFILE=$PROFILE_NAME" >> "$GITHUB_OUTPUT"
+        # Export to GITHUB_ENV so the profile persists to post steps (cache save)
+        # This is necessary because step-level env vars don't persist to post steps
+        echo "AWS_PROFILE=$PROFILE_NAME" >> "$GITHUB_ENV"
+        echo "AWS_DEFAULT_PROFILE=$PROFILE_NAME" >> "$GITHUB_ENV"
 
     - name: Prepare cache keys
       if: steps.cache-backend.outputs.cache-backend == 's3'

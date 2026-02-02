@@ -15,181 +15,30 @@ inputs:
     description: The chunk size used to split up large files during upload, in bytes
   enableCrossOsArchive:
     description: When enabled, allows to save or restore caches that can be restored or saved respectively on other platforms
-    default: false
+    default: 'false'
   fail-on-cache-miss:
     description: Fail the workflow if cache entry is not found
-    default: false
+    default: 'false'
   lookup-only:
     description: Check if a cache entry exists for the given input(s) (key, restore-keys) without downloading the cache
-    default: false
+    default: 'false'
   environment:
-    description: Environment to use ('dev' or 'prod', 's3' backend only).
+    description: Environment to use ('dev' or 'prod', 's3' backend only)
     default: prod
   fallback-branch:
-    description: Optional maintenance branch for fallback restore keys (pattern 'branch-*', 's3' backend only). If not set, the repository
-      default branch is used.
+    description: Optional maintenance branch for fallback restore keys (pattern 'branch-*', 's3' backend only). If not set, the repository default branch is used.
   backend:
     description: Force cache backend ('github' or 's3'). If not set, automatically determined based on repository visibility.
 
 outputs:
   cache-hit:
     description: A boolean value to indicate an exact match was found for the primary key
-    value: ${{ steps.github-cache.outputs.cache-hit || steps.s3-cache.outputs.cache-hit }}
 
 runs:
-  using: composite
-  steps:
-    - name: Determine cache backend
-      id: cache-backend
-      shell: bash
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-        REPO_VISIBILITY: ${{ github.event.repository.visibility }}
-        FORCED_BACKEND: ${{ inputs.backend }}
-      run: |
-        if [[ "$FORCED_BACKEND" == "github" || "$FORCED_BACKEND" == "s3" ]]; then
-          CACHE_BACKEND="$FORCED_BACKEND"
-          echo "Using forced backend: $CACHE_BACKEND"
-        else
-          # If visibility is not available in the event, try to get it from the API
-          if [[ -z "$REPO_VISIBILITY" || "$REPO_VISIBILITY" = "null" ]]; then
-            REPO_VISIBILITY=$(curl -s -H "Authorization: token ${{ github.token }}" \
-              "https://api.github.com/repos/${{ github.repository }}" | \
-              jq -r '.visibility // "private"')
-          fi
-          echo "Repository visibility: $REPO_VISIBILITY"
-
-          if [[ "$REPO_VISIBILITY" == "public" ]]; then
-            CACHE_BACKEND="github"
-            echo "Using GitHub cache for public repository"
-          else
-            CACHE_BACKEND="s3"
-            echo "Using S3 cache for private/internal repository"
-          fi
-        fi
-
-        echo "cache-backend=$CACHE_BACKEND" >> "$GITHUB_OUTPUT"
-
-    - name: Cache with GitHub Actions (public repos)
-      if: steps.cache-backend.outputs.cache-backend == 'github'
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      id: github-cache
-      with:
-        path: ${{ inputs.path }}
-        key: ${{ inputs.key }}
-        restore-keys: ${{ inputs.restore-keys }}
-        upload-chunk-size: ${{ inputs.upload-chunk-size }}
-        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
-        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
-        lookup-only: ${{ inputs.lookup-only }}
-
-    # Cache with S3 (private/internal repos)
-    - name: Authenticate to AWS
-      if: steps.cache-backend.outputs.cache-backend == 's3'
-      id: aws-auth
-      shell: bash
-      env:
-        POOL_ID: ${{ inputs.environment == 'prod' && 'eu-central-1:511fe374-ae4f-46d0-adb7-9246e570c7f4' || 'eu-central-1:3221c6ea-3f67-4fd8-a7ff-7426f96add89' }}
-        AWS_ACCOUNT_ID: ${{ inputs.environment == 'prod' && '275878209202' || '460386131003' }}
-        IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
-        AUDIENCE: cognito-identity.amazonaws.com
-        AWS_REGION: eu-central-1
-        GITHUB_RUN_ID: ${{ github.run_id }}
-      run: |
-        # Get GitHub Actions ID token using script
-        ACCESS_TOKEN=$("$GITHUB_ACTION_PATH/scripts/get-github-token.sh")
-        echo "::add-mask::$ACCESS_TOKEN"
-
-        # Get Identity ID
-        identityId=$(aws cognito-identity get-id \
-        --identity-pool-id "$POOL_ID" \
-        --account-id "$AWS_ACCOUNT_ID" \
-        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}' \
-        --query 'IdentityId' --output text)
-
-        # Validate Identity ID was obtained
-        if [[ "$identityId" == "null" || -z "$identityId" ]]; then
-          echo "::error::Failed to obtain Identity ID from Cognito Identity Pool"
-          echo "::error::Check identity pool configuration and IAM roles"
-          exit 1
-        fi
-
-        # Get and validate AWS credentials
-        awsCredentials=$(aws cognito-identity get-credentials-for-identity \
-        --identity-id "$identityId" \
-        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}')
-
-        AWS_ACCESS_KEY_ID=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
-        AWS_SECRET_ACCESS_KEY=$(echo "$awsCredentials" | jq -r ".Credentials.SecretKey")
-        AWS_SESSION_TOKEN=$(echo "$awsCredentials" | jq -r ".Credentials.SessionToken")
-        if [[ "$AWS_ACCESS_KEY_ID" == "null" || -z "$AWS_ACCESS_KEY_ID" ]]; then
-          echo "::error::Failed to obtain AWS Access Key ID"
-          exit 1
-        fi
-        if [[ "$AWS_SECRET_ACCESS_KEY" == "null" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
-          echo "::error::Failed to obtain AWS Secret Access Key"
-          exit 1
-        fi
-        if [[ "$AWS_SESSION_TOKEN" == "null" || -z "$AWS_SESSION_TOKEN" ]]; then
-          echo "::error::Failed to obtain AWS Session Token"
-          exit 1
-        fi
-        echo "::add-mask::$AWS_ACCESS_KEY_ID"
-        echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
-        echo "::add-mask::$AWS_SESSION_TOKEN"
-
-        # Create a unique AWS profile to isolate credentials from user-configured AWS credentials
-        # This prevents credential override when users call aws-actions/configure-aws-credentials
-        # between the cache restore (main step) and cache save (post step)
-        PROFILE_NAME="gh-action-cache-${GITHUB_RUN_ID}"
-
-        mkdir -p ~/.aws
-        chmod 700 ~/.aws
-
-        # Write credentials to a dedicated profile using AWS CLI (handles file format and permissions correctly)
-        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile "$PROFILE_NAME"
-        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile "$PROFILE_NAME"
-        aws configure set aws_session_token "$AWS_SESSION_TOKEN" --profile "$PROFILE_NAME"
-        aws configure set region eu-central-1 --profile "$PROFILE_NAME"
-        echo "Created AWS profile: $PROFILE_NAME"
-        echo "AWS_PROFILE=$PROFILE_NAME" >> "$GITHUB_OUTPUT"
-        # Export to GITHUB_ENV so the profile persists to post steps (cache save)
-        # This is necessary because step-level env vars don't persist to post steps
-        echo "AWS_PROFILE=$PROFILE_NAME" >> "$GITHUB_ENV"
-        echo "AWS_DEFAULT_PROFILE=$PROFILE_NAME" >> "$GITHUB_ENV"
-
-    - name: Prepare cache keys
-      if: steps.cache-backend.outputs.cache-backend == 's3'
-      shell: bash
-      id: prepare-keys
-      env:
-        INPUT_KEY: ${{ inputs.key }}
-        INPUT_RESTORE_KEYS: ${{ inputs.restore-keys }}
-        INPUT_FALLBACK_BRANCH: ${{ inputs.fallback-branch }}
-        GITHUB_TOKEN: ${{ github.token }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
-      run: $GITHUB_ACTION_PATH/scripts/prepare-keys.sh
-
-    - name: Cache on S3
-      if: steps.cache-backend.outputs.cache-backend == 's3'
-      uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
-      id: s3-cache
-      env:
-        RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
-        AWS_DEFAULT_REGION: eu-central-1
-        AWS_REGION: eu-central-1
-        # Use AWS profile instead of direct credentials to prevent override issues
-        # When users configure their own AWS credentials mid-job, the profile remains isolated
-        AWS_PROFILE: ${{ steps.aws-auth.outputs.AWS_PROFILE }}
-        AWS_DEFAULT_PROFILE: ${{ steps.aws-auth.outputs.AWS_PROFILE }}
-      with:
-        path: ${{ inputs.path }}
-        key: ${{ steps.prepare-keys.outputs.branch-key }}
-        restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
-        upload-chunk-size: ${{ inputs.upload-chunk-size }}
-        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
-        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
-        lookup-only: ${{ inputs.lookup-only }}
+  using: 'node20'
+  main: 'dist/main/index.js'
+  post: 'dist/post/index.js'
+  post-if: success()
 
 branding:
   icon: upload-cloud

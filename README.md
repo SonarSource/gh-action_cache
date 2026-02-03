@@ -10,6 +10,7 @@ Adaptive cache action that automatically chooses the appropriate caching backend
 
 ## Requirements
 
+- `aws` (AWS CLI)
 - `jq`
 
 ## Usage
@@ -111,12 +112,13 @@ Each environment has its own preconfigured S3 bucket and AWS Cognito pool for is
 
 ### AWS Credential Isolation
 
-This action creates a dedicated AWS profile (`gh-action-cache-<run_id>`) to store its credentials.
-This ensures that cache operations work correctly even when you configure your own AWS credentials later in the workflow.
+This action configures a dedicated AWS profile (`gh-action-cache`) backed by `credential_process`.
+Credentials are fetched on demand using GitHub OIDC + Cognito and never exported to `GITHUB_ENV`.
+This ensures cache operations work correctly even when you configure your own AWS credentials later in the workflow.
 
 **Why this matters**: The cache save operation happens in a GitHub Actions post-step (after your job completes).
 If you use `aws-actions/configure-aws-credentials` during your job, it would normally override the cache action's credentials,
-causing cache save to fail.
+causing cache save to fail. The cache profile stays isolated and is only used by the cache step.
 
 **Example workflow that works correctly**:
 
@@ -124,8 +126,8 @@ causing cache save to fail.
 jobs:
   build:
     steps:
-      # Cache action authenticates and stores credentials in isolated profile
-      - uses: SonarSource/gh-action-cache@v1
+      # Cache action authenticates and uses isolated profile
+      - uses: SonarSource/gh-action_cache@v1
         with:
           path: ~/.cache
           key: my-cache-${{ hashFiles('**/lockfile') }}

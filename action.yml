@@ -84,9 +84,8 @@ runs:
         lookup-only: ${{ inputs.lookup-only }}
 
     # Cache with S3 (private/internal repos)
-    - name: Authenticate to AWS
+    - name: Configure cache credential profile
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      id: aws-auth
       shell: bash
       env:
         POOL_ID: ${{ inputs.environment == 'prod' && 'eu-central-1:511fe374-ae4f-46d0-adb7-9246e570c7f4' || 'eu-central-1:3221c6ea-3f67-4fd8-a7ff-7426f96add89' }}
@@ -94,65 +93,16 @@ runs:
         IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
         AUDIENCE: cognito-identity.amazonaws.com
         AWS_REGION: eu-central-1
-        GITHUB_RUN_ID: ${{ github.run_id }}
       run: |
-        # Get GitHub Actions ID token using script
-        ACCESS_TOKEN=$("$GITHUB_ACTION_PATH/scripts/get-github-token.sh")
-        echo "::add-mask::$ACCESS_TOKEN"
-
-        # Get Identity ID
-        identityId=$(aws cognito-identity get-id \
-        --identity-pool-id "$POOL_ID" \
-        --account-id "$AWS_ACCOUNT_ID" \
-        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}' \
-        --query 'IdentityId' --output text)
-
-        # Validate Identity ID was obtained
-        if [[ "$identityId" == "null" || -z "$identityId" ]]; then
-          echo "::error::Failed to obtain Identity ID from Cognito Identity Pool"
-          echo "::error::Check identity pool configuration and IAM roles"
-          exit 1
-        fi
-
-        # Get and validate AWS credentials
-        awsCredentials=$(aws cognito-identity get-credentials-for-identity \
-        --identity-id "$identityId" \
-        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}')
-
-        AWS_ACCESS_KEY_ID=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
-        AWS_SECRET_ACCESS_KEY=$(echo "$awsCredentials" | jq -r ".Credentials.SecretKey")
-        AWS_SESSION_TOKEN=$(echo "$awsCredentials" | jq -r ".Credentials.SessionToken")
-        if [[ "$AWS_ACCESS_KEY_ID" == "null" || -z "$AWS_ACCESS_KEY_ID" ]]; then
-          echo "::error::Failed to obtain AWS Access Key ID"
-          exit 1
-        fi
-        if [[ "$AWS_SECRET_ACCESS_KEY" == "null" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
-          echo "::error::Failed to obtain AWS Secret Access Key"
-          exit 1
-        fi
-        if [[ "$AWS_SESSION_TOKEN" == "null" || -z "$AWS_SESSION_TOKEN" ]]; then
-          echo "::error::Failed to obtain AWS Session Token"
-          exit 1
-        fi
-        echo "::add-mask::$AWS_ACCESS_KEY_ID"
-        echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
-        echo "::add-mask::$AWS_SESSION_TOKEN"
-
-        # Create a unique AWS profile to isolate credentials from user-configured AWS credentials
-        # This prevents credential override when users call aws-actions/configure-aws-credentials
-        # between the cache restore (main step) and cache save (post step)
-        PROFILE_NAME="gh-action-cache-${GITHUB_RUN_ID}"
-
+        PROFILE_NAME="gh-action-cache"
         mkdir -p ~/.aws
         chmod 700 ~/.aws
 
-        # Write credentials to a dedicated profile using AWS CLI (handles file format and permissions correctly)
-        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile "$PROFILE_NAME"
-        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile "$PROFILE_NAME"
-        aws configure set aws_session_token "$AWS_SESSION_TOKEN" --profile "$PROFILE_NAME"
-        aws configure set region eu-central-1 --profile "$PROFILE_NAME"
-        echo "Created AWS profile: $PROFILE_NAME"
-        echo "AWS_PROFILE=$PROFILE_NAME" >> "$GITHUB_OUTPUT"
+        cat <<CONFIG >> ~/.aws/config
+        [profile ${PROFILE_NAME}]
+        region = ${AWS_REGION}
+        credential_process = ${GITHUB_ACTION_PATH}/scripts/cache-credential-process.sh
+        CONFIG
 
     - name: Prepare cache keys
       if: steps.cache-backend.outputs.cache-backend == 's3'
@@ -174,10 +124,13 @@ runs:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
         AWS_DEFAULT_REGION: eu-central-1
         AWS_REGION: eu-central-1
-        # Use AWS profile instead of direct credentials to prevent override issues
-        # When users configure their own AWS credentials mid-job, the profile remains isolated
-        AWS_PROFILE: ${{ steps.aws-auth.outputs.AWS_PROFILE }}
-        AWS_DEFAULT_PROFILE: ${{ steps.aws-auth.outputs.AWS_PROFILE }}
+        AWS_SDK_LOAD_CONFIG: 1
+        AWS_PROFILE: gh-action-cache
+        AWS_DEFAULT_PROFILE: gh-action-cache
+        POOL_ID: ${{ inputs.environment == 'prod' && 'eu-central-1:511fe374-ae4f-46d0-adb7-9246e570c7f4' || 'eu-central-1:3221c6ea-3f67-4fd8-a7ff-7426f96add89' }}
+        AWS_ACCOUNT_ID: ${{ inputs.environment == 'prod' && '275878209202' || '460386131003' }}
+        IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
+        AUDIENCE: cognito-identity.amazonaws.com
       with:
         path: ${{ inputs.path }}
         key: ${{ steps.prepare-keys.outputs.branch-key }}

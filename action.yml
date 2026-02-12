@@ -98,11 +98,32 @@ runs:
         mkdir -p ~/.aws
         chmod 700 ~/.aws
 
-        cat <<CONFIG >> ~/.aws/config
-        [profile ${PROFILE_NAME}]
-        region = ${AWS_REGION}
-        credential_process = ${GITHUB_ACTION_PATH}/scripts/cache-credential-process.sh
-        CONFIG
+        # Embed all credential parameters directly in the credential_process
+        # command stored in ~/.aws/config. This makes the credential chain
+        # self-contained — it does not depend on environment variables that
+        # may be cleared by other actions' post-steps (e.g.
+        # aws-actions/configure-aws-credentials cleanup clears AWS_REGION).
+        #
+        # Using "aws configure set" to write the profile. This is inherently
+        # idempotent — multiple invocations of this action in the same job
+        # safely update the same profile in-place (no duplicate sections).
+        CRED_CMD="${GITHUB_ACTION_PATH}/scripts/cache-credential-process.sh --pool-id '${POOL_ID}' --account-id '${AWS_ACCOUNT_ID}' --provider '${IDENTITY_PROVIDER_NAME}' --audience '${AUDIENCE}' --region '${AWS_REGION}'"
+        aws configure set region "${AWS_REGION}" --profile "${PROFILE_NAME}"
+        aws configure set credential_process "${CRED_CMD}" --profile "${PROFILE_NAME}"
+        echo "Configured AWS profile: ${PROFILE_NAME}"
+
+        # Export only the vars that the runs-on/cache Node.js post-step (save)
+        # needs to locate the S3 bucket and use the correct AWS profile.
+        # Step-level env: on "Cache on S3" are only available during the main
+        # step (restore), not during the post-step (save).
+        # Note: credential_process params (POOL_ID, AWS_ACCOUNT_ID, etc.) are
+        # intentionally NOT exported — they are baked into ~/.aws/config above.
+        {
+          echo "AWS_SDK_LOAD_CONFIG=1"
+          echo "AWS_PROFILE=${PROFILE_NAME}"
+          echo "AWS_DEFAULT_PROFILE=${PROFILE_NAME}"
+          echo "RUNS_ON_S3_BUCKET_CACHE=sonarsource-s3-cache-${{ inputs.environment }}-bucket"
+        } >> "$GITHUB_ENV"
 
     - name: Prepare cache keys
       if: steps.cache-backend.outputs.cache-backend == 's3'

@@ -3,7 +3,23 @@ set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
+# Parse CLI arguments (preferred — values baked into ~/.aws/config by action.yml).
+# Falls back to environment variables for backward compatibility.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pool-id)    POOL_ID="$2";                shift 2 ;;
+    --account-id) AWS_ACCOUNT_ID="$2";         shift 2 ;;
+    --provider)   IDENTITY_PROVIDER_NAME="$2"; shift 2 ;;
+    --audience)   AUDIENCE="$2";               shift 2 ;;
+    --region)     AWS_REGION="$2";             shift 2 ;;
+    *) echo "::warning::Unknown argument: $1" >&2; shift ;;
+  esac
+done
+
 : "${POOL_ID:?}" "${AWS_ACCOUNT_ID:?}" "${IDENTITY_PROVIDER_NAME:?}" "${AUDIENCE:?}" "${AWS_REGION:?}"
+
+# Export so subprocesses (get-github-token.sh) can access AUDIENCE and AWS_REGION
+export POOL_ID AWS_ACCOUNT_ID IDENTITY_PROVIDER_NAME AUDIENCE AWS_REGION
 
 if ! command -v aws >/dev/null 2>&1; then
   echo "::error title=AWS CLI is required for credential_process"

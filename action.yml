@@ -154,6 +154,17 @@ runs:
         echo "Created AWS profile: $PROFILE_NAME"
         echo "AWS_PROFILE=$PROFILE_NAME" >> "$GITHUB_OUTPUT"
 
+        # Persist profile and bucket to $GITHUB_ENV so the runs-on/cache
+        # post-step (save) can locate credentials. Step-level env: on the
+        # "Cache on S3" step below are only available during the main step
+        # (restore), not during the post-step (save).
+        {
+          echo "AWS_SDK_LOAD_CONFIG=1"
+          echo "AWS_PROFILE=${PROFILE_NAME}"
+          echo "AWS_DEFAULT_PROFILE=${PROFILE_NAME}"
+          echo "RUNS_ON_S3_BUCKET_CACHE=sonarsource-s3-cache-${{ inputs.environment }}-bucket"
+        } >> "$GITHUB_ENV"
+
     - name: Prepare cache keys
       if: steps.cache-backend.outputs.cache-backend == 's3'
       shell: bash

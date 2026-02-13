@@ -1,0 +1,18 @@
+name: Cache Credential Setup
+description: Internal action - obtains AWS Cognito credentials for S3 cache
+inputs:
+  environment:
+    description: Environment (prod or dev)
+    default: prod
+outputs:
+  credentials-file:
+    description: Path to the credentials file
+  AWS_ACCESS_KEY_ID:
+    description: AWS access key ID
+  AWS_SECRET_ACCESS_KEY:
+    description: AWS secret access key
+  AWS_SESSION_TOKEN:
+    description: AWS session token
+runs:
+  using: node20
+  main: dist/index.js

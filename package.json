@@ -1,0 +1,23 @@
+{
+  "name": "gh-action-cache",
+  "version": "2.0.0",
+  "private": true,
+  "description": "S3 Cache action with credential isolation",
+  "scripts": {
+    "build": "npm run build:setup && npm run build:guard-main && npm run build:guard-post",
+    "build:setup": "ncc build src/credential-setup.ts -o credential-setup/dist --license licenses.txt",
+    "build:guard-main": "ncc build src/credential-guard-main.ts -o credential-guard/dist/main --license licenses.txt",
+    "build:guard-post": "ncc build src/credential-guard-post.ts -o credential-guard/dist/post --license licenses.txt",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@aws-sdk/client-cognito-identity": "^3.750.0"
+  }
+}

@@ -1,0 +1,11 @@
+name: Cache Credential Guard
+description: Internal action - restores AWS credentials in post-step for cache save
+inputs:
+  credentials-file:
+    description: Path to the credentials JSON file
+    required: true
+runs:
+  using: node20
+  main: dist/main/index.js
+  post: dist/post/index.js
+  post-if: success()

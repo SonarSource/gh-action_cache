@@ -2,3 +2,9 @@
 node_modules/
 lib/
 *.js.map
+
+# ncc generates these but they're unnecessary for GitHub Action bundles
+credential-setup/dist/**/*.d.ts
+credential-setup/dist/**/*.d.ts.map
+credential-guard/dist/**/*.d.ts
+credential-guard/dist/**/*.d.ts.map

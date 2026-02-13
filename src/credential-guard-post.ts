@@ -29,6 +29,10 @@ export async function run(): Promise<void> {
     core.exportVariable('AWS_SESSION_TOKEN', creds.SessionToken);
     core.exportVariable('AWS_REGION', AWS_REGION);
     core.exportVariable('AWS_DEFAULT_REGION', AWS_REGION);
+    // Clear profile-based config so AWS SDK uses fromEnv() instead of fromIni().
+    // Safe here because this is a post step — no user code runs after it.
+    core.exportVariable('AWS_PROFILE', '');
+    core.exportVariable('AWS_DEFAULT_PROFILE', '');
 
     core.info('Cache credentials restored for post-step cache save');
   } catch (error) {

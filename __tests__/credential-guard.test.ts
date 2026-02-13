@@ -82,6 +82,9 @@ describe('credential-guard-post', () => {
     expect(core.exportVariable).toHaveBeenCalledWith('AWS_SESSION_TOKEN', 'token_restored');
     expect(core.exportVariable).toHaveBeenCalledWith('AWS_REGION', 'eu-central-1');
     expect(core.exportVariable).toHaveBeenCalledWith('AWS_DEFAULT_REGION', 'eu-central-1');
+    // Verify profile-based config is cleared so SDK uses fromEnv
+    expect(core.exportVariable).toHaveBeenCalledWith('AWS_PROFILE', '');
+    expect(core.exportVariable).toHaveBeenCalledWith('AWS_DEFAULT_PROFILE', '');
   });
 
   it('warns and continues if credentials file is missing', async () => {

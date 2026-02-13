@@ -160,3 +160,134 @@ jobs:
 
       # Post-step: credential-guard restores real creds, then runs-on/cache saves
       # If this job succeeds, the credential guard is working correctly
+
+  # Reproduces: "Unable to parse config file C:\Users\runneradmin/.aws/config"
+  # https://github.com/SonarSource/peachee-cfamily/actions/runs/21646222381/job/62398839588#step:26:263
+  test-s3-cache-windows:
+    runs-on: github-windows-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Cache with S3 on Windows
+        id: cache-test
+        uses: ./
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: windows-test-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: windows-test-${{ runner.os }}-
+          environment: dev
+          backend: s3
+
+      - name: Create something to cache
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+  # Reproduces: ~/.aws/config corruption from multiple credential_process entries
+  test-s3-cache-multiple-invocations:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          version: 2025.7.12
+
+      # First cache invocation
+      - name: Cache pip dependencies
+        id: cache-pip
+        uses: ./
+        with:
+          path: ~/.cache/pip
+          key: multi-pip-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: multi-pip-${{ runner.os }}-
+          environment: dev
+          backend: s3
+
+      # Second cache invocation in same job
+      # Old approach would append duplicate profile to ~/.aws/config
+      - name: Cache npm dependencies
+        id: cache-npm
+        uses: ./
+        with:
+          path: ~/.npm
+          key: multi-npm-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: multi-npm-${{ runner.os }}-
+          environment: dev
+          backend: s3
+
+      - name: Create something to cache
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          npm init -y
+
+  # Reproduces: pre-existing AWS config from configure-aws-credentials
+  # https://github.com/SonarSource/sonarsource-iam/actions/runs/21951781857/job/63404298650#step:5:9
+  test-s3-cache-with-preset-aws-config:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          version: 2025.7.12
+
+      # Simulate pre-existing AWS config (as if configure-aws-credentials ran before)
+      - name: Create pre-existing AWS config
+        run: |
+          mkdir -p ~/.aws
+          cat <<'AWSCONFIG' > ~/.aws/config
+          [default]
+          region = us-east-1
+          output = json
+          [profile some-other-profile]
+          region = us-west-2
+          AWSCONFIG
+          cat <<'AWSCREDS' > ~/.aws/credentials
+          [default]
+          aws_access_key_id = AKIAFAKEDEFAULT
+          aws_secret_access_key = fakesecretdefault
+          [some-other-profile]
+          aws_access_key_id = AKIAFAKEOTHER
+          aws_secret_access_key = fakesecretother
+          AWSCREDS
+          echo "Pre-existing AWS config created"
+          cat ~/.aws/config
+
+      - name: Set conflicting AWS env vars
+        run: |
+          echo "AWS_ACCESS_KEY_ID=AKIAFAKEENV" >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=fakesecretenv" >> "$GITHUB_ENV"
+          echo "AWS_SESSION_TOKEN=faketokenenv" >> "$GITHUB_ENV"
+          echo "AWS_PROFILE=some-other-profile" >> "$GITHUB_ENV"
+          echo "AWS_DEFAULT_PROFILE=some-other-profile" >> "$GITHUB_ENV"
+
+      # Cache action should override the conflicting credentials
+      - name: Cache with S3
+        id: cache-test
+        uses: ./
+        with:
+          path: ~/.cache/pip
+          key: preset-aws-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: preset-aws-${{ runner.os }}-
+          environment: dev
+          backend: s3
+
+      - name: Re-override with fake credentials (simulating mid-job auth change)
+        run: |
+          echo "AWS_ACCESS_KEY_ID=AKIAFAKEOVERRIDE" >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=fakesecretoverride" >> "$GITHUB_ENV"
+          echo "AWS_SESSION_TOKEN=faketokenoverride" >> "$GITHUB_ENV"
+
+      - name: Create something to cache
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest requests

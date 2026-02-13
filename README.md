@@ -164,25 +164,26 @@ other steps in your workflow configure different AWS credentials.
 - Pre-existing `AWS_PROFILE` or `AWS_DEFAULT_PROFILE` in the environment
 - Users configuring AWS credentials before or after the cache action
 
-**Recommended workflow** (configure your AWS credentials **after** the cache action):
+**Works regardless of credential ordering** — you can configure your AWS credentials
+before or after the cache action:
 
 ```yaml
 jobs:
   build:
     steps:
-      # Cache action authenticates via OIDC + Cognito
-      - uses: SonarSource/gh-action-cache@v2
-        with:
-          path: ~/.cache
-          key: my-cache-${{ hashFiles('**/lockfile') }}
-
-      # Your own AWS authentication - does NOT affect cache credentials
+      # Your own AWS authentication — order does not matter
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::123456789:role/my-role
           aws-region: us-east-1
 
-      - run: aws s3 ls  # Uses YOUR credentials
+      # Cache action authenticates independently via OIDC + Cognito
+      - uses: SonarSource/gh-action-cache@v2
+        with:
+          path: ~/.cache
+          key: my-cache-${{ hashFiles('**/lockfile') }}
+
+      - run: aws s3 ls  # Uses YOUR credentials (cache never touches GITHUB_ENV)
 
       # Post-step: credential-guard restores cache creds, then cache saves!
 ```

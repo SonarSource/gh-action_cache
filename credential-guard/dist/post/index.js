@@ -25682,10 +25682,36 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.getAwsDir = getAwsDir;
+exports.writeAwsCredentialsFile = writeAwsCredentialsFile;
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
 const fs = __importStar(__nccwpck_require__(1943));
+const os = __importStar(__nccwpck_require__(857));
+const path = __importStar(__nccwpck_require__(6928));
 const AWS_REGION = 'eu-central-1';
+function getAwsDir() {
+    return path.join(process.env.__TEST_AWS_HOME || os.homedir(), '.aws');
+}
+async function writeAwsCredentialsFile(creds) {
+    const awsDir = getAwsDir();
+    await fs.mkdir(awsDir, { recursive: true, mode: 0o700 });
+    const credentialsContent = [
+        '[default]',
+        `aws_access_key_id = ${creds.AccessKeyId}`,
+        `aws_secret_access_key = ${creds.SecretAccessKey}`,
+        `aws_session_token = ${creds.SessionToken}`,
+        '',
+    ].join('\n');
+    const configContent = ['[default]', `region = ${AWS_REGION}`, ''].join('\n');
+    await fs.writeFile(path.join(awsDir, 'credentials'), credentialsContent, {
+        mode: 0o600,
+    });
+    await fs.writeFile(path.join(awsDir, 'config'), configContent, {
+        mode: 0o600,
+    });
+    core.info('Wrote credentials to ~/.aws/credentials [default] profile (fallback for nested composites)');
+}
 async function run() {
     const credentialsFile = core.getState('credentials-file');
     if (!credentialsFile) {
@@ -25715,6 +25741,7 @@ async function run() {
         // Safe here because this is a post step — no user code runs after it.
         core.exportVariable('AWS_PROFILE', '');
         core.exportVariable('AWS_DEFAULT_PROFILE', '');
+        await writeAwsCredentialsFile(creds);
         core.info('Cache credentials restored for post-step cache save');
     }
     catch (error) {

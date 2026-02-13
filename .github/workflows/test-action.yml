@@ -120,3 +120,43 @@ jobs:
       run: go mod download
     - name: Build
       run: go build -o hello main.go
+
+  test-s3-cache-with-credential-interference:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          version: 2025.7.12
+
+      # Step 1: Use our cache action (should restore and later save)
+      - name: Cache with S3
+        id: cache-test
+        uses: ./
+        with:
+          path: ~/.cache/pip
+          key: interference-test-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: interference-test-${{ runner.os }}-
+          environment: dev
+          backend: s3
+
+      # Step 2: Simulate user overwriting AWS credentials
+      # This is the scenario that caused production failures
+      - name: Overwrite AWS credentials (simulating user workflow)
+        run: |
+          echo "AWS_ACCESS_KEY_ID=FAKE_KEY_TO_OVERRIDE" >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=FAKE_SECRET_TO_OVERRIDE" >> "$GITHUB_ENV"
+          echo "AWS_SESSION_TOKEN=FAKE_TOKEN_TO_OVERRIDE" >> "$GITHUB_ENV"
+          echo "Simulated credential override via GITHUB_ENV"
+
+      # Step 3: Create something to cache
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest requests
+
+      # Post-step: credential-guard restores real creds, then runs-on/cache saves
+      # If this job succeeds, the credential guard is working correctly

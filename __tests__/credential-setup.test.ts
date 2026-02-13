@@ -13,7 +13,6 @@ vi.mock('@actions/core', () => ({
   setSecret: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
-  saveState: vi.fn(),
 }));
 
 vi.mock('@aws-sdk/client-cognito-identity', () => {
@@ -39,7 +38,6 @@ describe('credential-setup', () => {
     process.env = { ...originalEnv, GITHUB_RUN_ID: '12345' };
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cred-test-'));
     process.env.__TEST_CREDS_DIR = tmpDir;
-    process.env.__TEST_AWS_HOME = tmpDir;
   });
 
   afterEach(async () => {
@@ -75,81 +73,6 @@ describe('credential-setup', () => {
     expect(core.setOutput).toHaveBeenCalledWith('AWS_ACCESS_KEY_ID', 'AKIA_TEST');
     expect(core.setOutput).toHaveBeenCalledWith('AWS_SECRET_ACCESS_KEY', 'secret_test');
     expect(core.setOutput).toHaveBeenCalledWith('AWS_SESSION_TOKEN', 'token_test');
-
-    // Verify state is saved for post step
-    expect(core.saveState).toHaveBeenCalledWith(
-      'credentials-file',
-      expect.stringContaining('credentials.json')
-    );
-    expect(core.saveState).toHaveBeenCalledWith('aws-credentials-backup', '');
-    expect(core.saveState).toHaveBeenCalledWith('aws-config-backup', '');
-  });
-
-  it('saves credentials file path and AWS backups to state', async () => {
-    vi.mocked(core.getInput).mockImplementation((name: string) => {
-      if (name === 'environment') return 'prod';
-      return '';
-    });
-    vi.mocked(core.getIDToken).mockResolvedValue('oidc-token');
-    sendMock
-      .mockResolvedValueOnce({ IdentityId: 'id-123' })
-      .mockResolvedValueOnce({
-        Credentials: {
-          AccessKeyId: 'AKIA_TEST',
-          SecretKey: 'secret_test',
-          SessionToken: 'token_test',
-          Expiration: new Date('2026-01-01'),
-        },
-      });
-
-    const { run } = await import('../src/credential-setup');
-    await run();
-
-    expect(core.saveState).toHaveBeenCalledWith(
-      'credentials-file',
-      expect.stringContaining('credentials.json')
-    );
-    expect(core.saveState).toHaveBeenCalledWith('aws-credentials-backup', '');
-    expect(core.saveState).toHaveBeenCalledWith('aws-config-backup', '');
-  });
-
-  it('backs up existing ~/.aws/credentials when present', async () => {
-    // Create existing ~/.aws/credentials before running
-    const awsDir = path.join(tmpDir, '.aws');
-    await fs.mkdir(awsDir, { recursive: true });
-    await fs.writeFile(path.join(awsDir, 'credentials'), '[default]\naws_access_key_id = EXISTING_KEY\n');
-    await fs.writeFile(path.join(awsDir, 'config'), '[default]\nregion = us-west-2\n');
-
-    vi.mocked(core.getInput).mockImplementation((name: string) => {
-      if (name === 'environment') return 'prod';
-      return '';
-    });
-    vi.mocked(core.getIDToken).mockResolvedValue('oidc-token');
-    sendMock
-      .mockResolvedValueOnce({ IdentityId: 'id-123' })
-      .mockResolvedValueOnce({
-        Credentials: {
-          AccessKeyId: 'AKIA_TEST',
-          SecretKey: 'secret_test',
-          SessionToken: 'token_test',
-          Expiration: new Date('2026-01-01'),
-        },
-      });
-
-    const { run } = await import('../src/credential-setup');
-    await run();
-
-    expect(core.saveState).toHaveBeenCalledWith(
-      'aws-credentials-backup',
-      '[default]\naws_access_key_id = EXISTING_KEY\n'
-    );
-    expect(core.saveState).toHaveBeenCalledWith(
-      'aws-config-backup',
-      '[default]\nregion = us-west-2\n'
-    );
-    expect(core.info).toHaveBeenCalledWith(
-      'Backed up existing ~/.aws/credentials for post-step restore'
-    );
   });
 
   it('fails for unknown environment', async () => {

@@ -43700,26 +43700,6 @@ async function run() {
         core.setOutput('AWS_SECRET_ACCESS_KEY', credentials.secretAccessKey);
         core.setOutput('AWS_SESSION_TOKEN', credentials.sessionToken);
         core.info('AWS credentials configured successfully');
-        // Back up existing AWS config files so our post step can restore them after cache save.
-        // credential-guard-post will write to ~/.aws/credentials as a fallback for
-        // actions/runner#3514 (nested composite env propagation bug).
-        const awsDir = path.join(process.env.__TEST_AWS_HOME || os.homedir(), '.aws');
-        let credentialsBackup = '';
-        let configBackup = '';
-        try {
-            credentialsBackup = await fs.readFile(path.join(awsDir, 'credentials'), 'utf-8');
-        }
-        catch { /* file doesn't exist */ }
-        try {
-            configBackup = await fs.readFile(path.join(awsDir, 'config'), 'utf-8');
-        }
-        catch { /* file doesn't exist */ }
-        core.saveState('credentials-file', credsFile);
-        core.saveState('aws-credentials-backup', credentialsBackup);
-        core.saveState('aws-config-backup', configBackup);
-        if (credentialsBackup) {
-            core.info('Backed up existing ~/.aws/credentials for post-step restore');
-        }
     }
     catch (error) {
         core.setFailed(`Credential setup failed: ${error instanceof Error ? error.message : error}`);

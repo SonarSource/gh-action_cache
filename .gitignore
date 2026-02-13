@@ -1,6 +1,11 @@
-.claude
+# Dependencies
 node_modules/
+
+# TypeScript build output (intermediate, not the ncc bundles)
 lib/
+*.tsbuildinfo
+
+# Source maps
 *.js.map
 
 # ncc generates these but they're unnecessary for GitHub Action bundles
@@ -8,3 +13,25 @@ credential-setup/dist/**/*.d.ts
 credential-setup/dist/**/*.d.ts.map
 credential-guard/dist/**/*.d.ts
 credential-guard/dist/**/*.d.ts.map
+
+# Test coverage
+coverage/
+*.lcov
+
+# Environment variables
+.env
+.env.*
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# npm cache
+.npm
+
+# Claude Code
+.claude

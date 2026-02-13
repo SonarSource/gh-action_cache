@@ -12,6 +12,7 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-added-large-files
+        exclude: ^(credential-setup/dist/|credential-guard/dist/)
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: f295829140d25717bc79368d3f966fc1f67a824f  # frozen: v0.41.0
     hooks:

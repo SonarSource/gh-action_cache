@@ -83,26 +83,13 @@ runs:
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
 
-    # Cache with S3 (private/internal repos)
-    - name: Configure cache credential profile
+    # S3 cache: credential setup → key preparation → cache → credential guard
+    - name: Setup S3 cache credentials
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      shell: bash
-      env:
-        POOL_ID: ${{ inputs.environment == 'prod' && 'eu-central-1:511fe374-ae4f-46d0-adb7-9246e570c7f4' || 'eu-central-1:3221c6ea-3f67-4fd8-a7ff-7426f96add89' }}
-        AWS_ACCOUNT_ID: ${{ inputs.environment == 'prod' && '275878209202' || '460386131003' }}
-        IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
-        AUDIENCE: cognito-identity.amazonaws.com
-        AWS_REGION: eu-central-1
-      run: |
-        PROFILE_NAME="gh-action-cache"
-        mkdir -p ~/.aws
-        chmod 700 ~/.aws
-
-        cat <<CONFIG >> ~/.aws/config
-        [profile ${PROFILE_NAME}]
-        region = ${AWS_REGION}
-        credential_process = ${GITHUB_ACTION_PATH}/scripts/cache-credential-process.sh
-        CONFIG
+      id: aws-auth
+      uses: ./credential-setup
+      with:
+        environment: ${{ inputs.environment }}
 
     - name: Prepare cache keys
       if: steps.cache-backend.outputs.cache-backend == 's3'
@@ -124,13 +111,10 @@ runs:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
         AWS_DEFAULT_REGION: eu-central-1
         AWS_REGION: eu-central-1
-        AWS_SDK_LOAD_CONFIG: 1
-        AWS_PROFILE: gh-action-cache
-        AWS_DEFAULT_PROFILE: gh-action-cache
-        POOL_ID: ${{ inputs.environment == 'prod' && 'eu-central-1:511fe374-ae4f-46d0-adb7-9246e570c7f4' || 'eu-central-1:3221c6ea-3f67-4fd8-a7ff-7426f96add89' }}
-        AWS_ACCOUNT_ID: ${{ inputs.environment == 'prod' && '275878209202' || '460386131003' }}
-        IDENTITY_PROVIDER_NAME: token.actions.githubusercontent.com
-        AUDIENCE: cognito-identity.amazonaws.com
+        # Step-level env: overrides GITHUB_ENV if propagation works
+        AWS_ACCESS_KEY_ID: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
       with:
         path: ${{ inputs.path }}
         key: ${{ steps.prepare-keys.outputs.branch-key }}
@@ -139,6 +123,16 @@ runs:
         enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
+
+    # Credential guard: placed AFTER runs-on/cache so its post step
+    # runs BEFORE runs-on/cache's post step (LIFO ordering).
+    # The post step re-exports credentials to GITHUB_ENV, ensuring
+    # runs-on/cache save always has valid AWS credentials.
+    - name: Credential guard for S3 cache save
+      if: steps.cache-backend.outputs.cache-backend == 's3'
+      uses: ./credential-guard
+      with:
+        credentials-file: ${{ steps.aws-auth.outputs.credentials-file }}
 
 branding:
   icon: upload-cloud

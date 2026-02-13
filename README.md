@@ -152,21 +152,17 @@ other steps in your workflow configure different AWS credentials.
 **How it works:**
 
 1. `credential-setup` obtains temporary AWS credentials via GitHub OIDC + Cognito
-2. Credentials are written to a protected temp file and exported to the environment
-3. `credential-guard` runs its post-step **before** the cache save post-step (LIFO ordering)
-4. The guard re-exports the original cache credentials, overriding any changes made by user steps
+2. Credentials are saved to a protected temp file and passed to the cache step via outputs
+3. The cache restore step uses step-level `env:` from outputs — isolated from GITHUB_ENV
+4. `credential-guard` post-step re-exports credentials to GITHUB_ENV for cache save (LIFO ordering)
 
 **This protects against:**
 
 - `aws-actions/configure-aws-credentials` overwriting credentials mid-job
 - `aws-actions/configure-aws-credentials` cleanup clearing credentials
 - Any step writing to `GITHUB_ENV` with different AWS credential values
-- Pre-existing `AWS_PROFILE` causing the SDK to skip environment credentials
-
-**Note:** If AWS credentials or `AWS_PROFILE` are already set when the cache action runs,
-`credential-setup` will **not** overwrite them in `GITHUB_ENV`. A warning will be emitted
-advising you to move your AWS authentication after the cache action. The cache will still
-work correctly via step-level outputs.
+- Pre-existing `AWS_PROFILE` or `AWS_DEFAULT_PROFILE` in the environment
+- Users configuring AWS credentials before or after the cache action
 
 **Recommended workflow** (configure your AWS credentials **after** the cache action):
 

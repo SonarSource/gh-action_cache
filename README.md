@@ -11,6 +11,41 @@ Adaptive cache action that automatically chooses the appropriate caching backend
 ## Requirements
 
 - `jq` (used by the cache key preparation script)
+- `id-token: write` permission (required for OIDC authentication with S3 backend)
+
+## Development
+
+### Prerequisites
+
+- Node.js 20+
+- npm
+
+### Install dependencies
+
+```bash
+npm install
+```
+
+### Run tests
+
+```bash
+npm test              # single run
+npm run test:watch    # watch mode
+```
+
+### Build
+
+The JS sub-actions (`credential-setup`, `credential-guard`) are bundled with
+`@vercel/ncc` into self-contained dist files. Rebuild after changing TypeScript source:
+
+```bash
+npm run build         # build all sub-actions
+npm run build:setup   # build credential-setup only
+npm run build:guard-main  # build credential-guard main only
+npm run build:guard-post  # build credential-guard post only
+```
+
+Bundled output goes to `credential-setup/dist/` and `credential-guard/dist/`. These must be committed since GitHub Actions runs them directly.
 
 ## Usage
 
@@ -126,8 +161,14 @@ other steps in your workflow configure different AWS credentials.
 - `aws-actions/configure-aws-credentials` overwriting credentials mid-job
 - `aws-actions/configure-aws-credentials` cleanup clearing credentials
 - Any step writing to `GITHUB_ENV` with different AWS credential values
+- Pre-existing `AWS_PROFILE` causing the SDK to skip environment credentials
 
-**Example workflow that works correctly**:
+**Note:** If AWS credentials or `AWS_PROFILE` are already set when the cache action runs,
+`credential-setup` will **not** overwrite them in `GITHUB_ENV`. A warning will be emitted
+advising you to move your AWS authentication after the cache action. The cache will still
+work correctly via step-level outputs.
+
+**Recommended workflow** (configure your AWS credentials **after** the cache action):
 
 ```yaml
 jobs:

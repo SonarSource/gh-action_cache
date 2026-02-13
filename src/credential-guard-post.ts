@@ -14,6 +14,11 @@ export async function run(): Promise<void> {
     const content = await fs.readFile(credentialsFile, 'utf-8');
     const creds = JSON.parse(content);
 
+    // Defensive: re-mask credentials in case setSecret scope changes
+    if (creds.AccessKeyId) core.setSecret(creds.AccessKeyId);
+    if (creds.SecretAccessKey) core.setSecret(creds.SecretAccessKey);
+    if (creds.SessionToken) core.setSecret(creds.SessionToken);
+
     if (!creds.AccessKeyId || !creds.SecretAccessKey || !creds.SessionToken) {
       core.warning('Credentials file is missing required fields — skipping');
       return;

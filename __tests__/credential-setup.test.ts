@@ -75,4 +75,33 @@ describe('credential-setup', () => {
     expect(core.setOutput).toHaveBeenCalledWith('AWS_SECRET_ACCESS_KEY', 'secret_test');
     expect(core.setOutput).toHaveBeenCalledWith('AWS_SESSION_TOKEN', 'token_test');
   });
+
+  it('fails for unknown environment', async () => {
+    vi.mocked(core.getInput).mockImplementation((name: string) => {
+      if (name === 'environment') return 'staging';
+      return '';
+    });
+
+    const { run } = await import('../src/credential-setup');
+    await run();
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining('Unknown environment')
+    );
+  });
+
+  it('fails when Cognito auth throws', async () => {
+    vi.mocked(core.getInput).mockImplementation((name: string) => {
+      if (name === 'environment') return 'prod';
+      return '';
+    });
+    vi.mocked(core.getIDToken).mockRejectedValue(new Error('OIDC unavailable'));
+
+    const { run } = await import('../src/credential-setup');
+    await run();
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining('OIDC unavailable')
+    );
+  });
 });

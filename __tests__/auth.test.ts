@@ -50,9 +50,11 @@ describe('getCognitoCredentials', () => {
     expect(result.accessKeyId).toBe('AKIATEST');
     expect(result.secretAccessKey).toBe('secret123');
     expect(result.sessionToken).toBe('token456');
+    expect(core.setSecret).toHaveBeenCalledWith('oidc-token-123');
     expect(core.setSecret).toHaveBeenCalledWith('AKIATEST');
     expect(core.setSecret).toHaveBeenCalledWith('secret123');
     expect(core.setSecret).toHaveBeenCalledWith('token456');
+    expect(result.expiration).toBe('2026-01-01T00:00:00.000Z');
   });
 
   it('throws if identity ID is empty', async () => {

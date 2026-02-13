@@ -11,6 +11,7 @@ vi.mock('@actions/core', () => ({
   info: vi.fn(),
   warning: vi.fn(),
   setFailed: vi.fn(),
+  setSecret: vi.fn(),
 }));
 
 import * as core from '@actions/core';
@@ -30,6 +31,19 @@ describe('credential-guard-main', () => {
     expect(core.saveState).toHaveBeenCalledWith(
       'credentials-file',
       '/tmp/creds/credentials.json'
+    );
+  });
+
+  it('fails when credentials-file input is missing', async () => {
+    vi.mocked(core.getInput).mockImplementation(() => {
+      throw new Error('Input required and not supplied: credentials-file');
+    });
+
+    const { run } = await import('../src/credential-guard-main');
+    await run();
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining('credentials-file')
     );
   });
 });

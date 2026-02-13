@@ -21,14 +21,6 @@ function getCredentialsDir(): string {
   return path.join('/tmp', `.gh-action-cache-${runId}`);
 }
 
-function hasPreExistingAwsCredentials(): boolean {
-  return !!(
-    process.env.AWS_ACCESS_KEY_ID ||
-    process.env.AWS_SECRET_ACCESS_KEY ||
-    process.env.AWS_PROFILE
-  );
-}
-
 export async function run(): Promise<void> {
   try {
     const environment = core.getInput('environment') || 'prod';
@@ -65,22 +57,6 @@ export async function run(): Promise<void> {
     core.setOutput('AWS_ACCESS_KEY_ID', credentials.accessKeyId);
     core.setOutput('AWS_SECRET_ACCESS_KEY', credentials.secretAccessKey);
     core.setOutput('AWS_SESSION_TOKEN', credentials.sessionToken);
-
-    // Only export to GITHUB_ENV if no pre-existing AWS credentials are detected
-    if (hasPreExistingAwsCredentials()) {
-      core.warning(
-        'AWS credentials already configured in the environment. ' +
-          'Skipping GITHUB_ENV export to avoid overwriting your credentials. ' +
-          'Cache credentials are passed via step outputs. ' +
-          'For best results, configure your AWS credentials AFTER the cache action.'
-      );
-    } else {
-      core.exportVariable('AWS_ACCESS_KEY_ID', credentials.accessKeyId);
-      core.exportVariable('AWS_SECRET_ACCESS_KEY', credentials.secretAccessKey);
-      core.exportVariable('AWS_SESSION_TOKEN', credentials.sessionToken);
-      core.exportVariable('AWS_REGION', AWS_REGION);
-      core.exportVariable('AWS_DEFAULT_REGION', AWS_REGION);
-    }
 
     core.info('AWS credentials configured successfully');
   } catch (error) {

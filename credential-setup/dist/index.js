@@ -43653,6 +43653,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
 const fs = __importStar(__nccwpck_require__(1943));
+const os = __importStar(__nccwpck_require__(857));
 const path = __importStar(__nccwpck_require__(6928));
 const auth_1 = __nccwpck_require__(9081);
 const POOL_IDS = {
@@ -43668,7 +43669,7 @@ function getCredentialsDir() {
     if (process.env.__TEST_CREDS_DIR)
         return process.env.__TEST_CREDS_DIR;
     const runId = process.env.GITHUB_RUN_ID ?? 'unknown';
-    return path.join('/tmp', `.gh-action-cache-${runId}`);
+    return path.join(os.tmpdir(), `.gh-action-cache-${runId}`);
 }
 async function run() {
     try {

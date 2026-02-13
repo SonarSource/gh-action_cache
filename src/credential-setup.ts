@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
 import * as fs from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import { getCognitoCredentials } from './auth';
 
@@ -18,7 +19,7 @@ const AWS_REGION = 'eu-central-1';
 function getCredentialsDir(): string {
   if (process.env.__TEST_CREDS_DIR) return process.env.__TEST_CREDS_DIR;
   const runId = process.env.GITHUB_RUN_ID ?? 'unknown';
-  return path.join('/tmp', `.gh-action-cache-${runId}`);
+  return path.join(os.tmpdir(), `.gh-action-cache-${runId}`);
 }
 
 export async function run(): Promise<void> {

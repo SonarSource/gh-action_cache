@@ -1,7 +1,43 @@
 import * as core from '@actions/core';
 import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 
 const AWS_REGION = 'eu-central-1';
+
+export function getAwsDir(): string {
+  return path.join(process.env.__TEST_AWS_HOME || os.homedir(), '.aws');
+}
+
+export async function writeAwsCredentialsFile(creds: {
+  AccessKeyId: string;
+  SecretAccessKey: string;
+  SessionToken: string;
+}): Promise<void> {
+  const awsDir = getAwsDir();
+  await fs.mkdir(awsDir, { recursive: true, mode: 0o700 });
+
+  const credentialsContent = [
+    '[default]',
+    `aws_access_key_id = ${creds.AccessKeyId}`,
+    `aws_secret_access_key = ${creds.SecretAccessKey}`,
+    `aws_session_token = ${creds.SessionToken}`,
+    '',
+  ].join('\n');
+
+  const configContent = ['[default]', `region = ${AWS_REGION}`, ''].join('\n');
+
+  await fs.writeFile(path.join(awsDir, 'credentials'), credentialsContent, {
+    mode: 0o600,
+  });
+  await fs.writeFile(path.join(awsDir, 'config'), configContent, {
+    mode: 0o600,
+  });
+
+  core.info(
+    'Wrote credentials to ~/.aws/credentials [default] profile (fallback for nested composites)'
+  );
+}
 
 export async function run(): Promise<void> {
   const credentialsFile = core.getState('credentials-file');
@@ -33,6 +69,8 @@ export async function run(): Promise<void> {
     // Safe here because this is a post step — no user code runs after it.
     core.exportVariable('AWS_PROFILE', '');
     core.exportVariable('AWS_DEFAULT_PROFILE', '');
+
+    await writeAwsCredentialsFile(creds);
 
     core.info('Cache credentials restored for post-step cache save');
   } catch (error) {

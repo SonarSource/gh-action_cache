@@ -58,6 +58,7 @@ describe('credential-guard-post', () => {
   });
 
   afterEach(async () => {
+    delete process.env.__TEST_AWS_HOME;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -104,5 +105,124 @@ describe('credential-guard-post', () => {
     await run();
 
     expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('No credentials file'));
+  });
+
+  it('writes ~/.aws/credentials with correct INI format', async () => {
+    const credsFile = path.join(tmpDir, 'credentials.json');
+    await fs.writeFile(
+      credsFile,
+      JSON.stringify({
+        AccessKeyId: 'AKIA_FALLBACK',
+        SecretAccessKey: 'secret_fallback',
+        SessionToken: 'token_fallback',
+      })
+    );
+
+    const fakeAwsHome = path.join(tmpDir, 'fakehome');
+    await fs.mkdir(fakeAwsHome, { recursive: true });
+    process.env.__TEST_AWS_HOME = fakeAwsHome;
+
+    vi.mocked(core.getState).mockReturnValue(credsFile);
+
+    const { run } = await import('../src/credential-guard-post');
+    await run();
+
+    const awsCredentials = await fs.readFile(
+      path.join(fakeAwsHome, '.aws', 'credentials'),
+      'utf-8'
+    );
+    expect(awsCredentials).toContain('[default]');
+    expect(awsCredentials).toContain('aws_access_key_id = AKIA_FALLBACK');
+    expect(awsCredentials).toContain('aws_secret_access_key = secret_fallback');
+    expect(awsCredentials).toContain('aws_session_token = token_fallback');
+
+    // Verify directory permissions (0o700)
+    const awsDirStat = await fs.stat(path.join(fakeAwsHome, '.aws'));
+    expect(awsDirStat.mode & 0o777).toBe(0o700);
+
+    // Verify file permissions (0o600)
+    const credsStat = await fs.stat(path.join(fakeAwsHome, '.aws', 'credentials'));
+    expect(credsStat.mode & 0o777).toBe(0o600);
+  });
+
+  it('writes ~/.aws/config with correct region', async () => {
+    const credsFile = path.join(tmpDir, 'credentials.json');
+    await fs.writeFile(
+      credsFile,
+      JSON.stringify({
+        AccessKeyId: 'AKIA_FALLBACK',
+        SecretAccessKey: 'secret_fallback',
+        SessionToken: 'token_fallback',
+      })
+    );
+
+    const fakeAwsHome = path.join(tmpDir, 'fakehome');
+    await fs.mkdir(fakeAwsHome, { recursive: true });
+    process.env.__TEST_AWS_HOME = fakeAwsHome;
+
+    vi.mocked(core.getState).mockReturnValue(credsFile);
+
+    const { run } = await import('../src/credential-guard-post');
+    await run();
+
+    const awsConfig = await fs.readFile(
+      path.join(fakeAwsHome, '.aws', 'config'),
+      'utf-8'
+    );
+    expect(awsConfig).toContain('[default]');
+    expect(awsConfig).toContain('region = eu-central-1');
+
+    // Verify file permissions (0o600)
+    const configStat = await fs.stat(path.join(fakeAwsHome, '.aws', 'config'));
+    expect(configStat.mode & 0o777).toBe(0o600);
+  });
+
+  it('logs fallback message after writing credentials file', async () => {
+    const credsFile = path.join(tmpDir, 'credentials.json');
+    await fs.writeFile(
+      credsFile,
+      JSON.stringify({
+        AccessKeyId: 'AKIA_LOG',
+        SecretAccessKey: 'secret_log',
+        SessionToken: 'token_log',
+      })
+    );
+
+    const fakeAwsHome = path.join(tmpDir, 'fakehome');
+    await fs.mkdir(fakeAwsHome, { recursive: true });
+    process.env.__TEST_AWS_HOME = fakeAwsHome;
+
+    vi.mocked(core.getState).mockReturnValue(credsFile);
+
+    const { run } = await import('../src/credential-guard-post');
+    await run();
+
+    expect(core.info).toHaveBeenCalledWith(
+      'Wrote credentials to ~/.aws/credentials [default] profile (fallback for nested composites)'
+    );
+  });
+
+  it('does not write ~/.aws/credentials when credentials are missing fields', async () => {
+    const credsFile = path.join(tmpDir, 'credentials.json');
+    await fs.writeFile(
+      credsFile,
+      JSON.stringify({
+        AccessKeyId: 'AKIA_PARTIAL',
+        SecretAccessKey: '',
+        SessionToken: 'token_partial',
+      })
+    );
+
+    const fakeAwsHome = path.join(tmpDir, 'fakehome');
+    await fs.mkdir(fakeAwsHome, { recursive: true });
+    process.env.__TEST_AWS_HOME = fakeAwsHome;
+
+    vi.mocked(core.getState).mockReturnValue(credsFile);
+
+    const { run } = await import('../src/credential-guard-post');
+    await run();
+
+    const awsDirExists = await fs.access(path.join(fakeAwsHome, '.aws')).then(() => true).catch(() => false);
+    expect(awsDirExists).toBe(false);
   });
 });

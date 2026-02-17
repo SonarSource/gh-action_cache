@@ -84,24 +84,12 @@ runs:
         lookup-only: ${{ inputs.lookup-only }}
 
     # S3 cache: credential setup → key preparation → cache → credential guard
-    # Composite action `./relative-path` resolves from workspace root.
-    # When used from another repo, sub-actions won't exist there;
-    # copy them from the action's own directory.
-    - name: Prepare credential sub-actions
-      if: steps.cache-backend.outputs.cache-backend == 's3'
-      shell: bash
-      run: |
-        mkdir -p "$GITHUB_WORKSPACE/.actions"
-        for dir in credential-setup credential-guard; do
-          if [ ! -d "$GITHUB_WORKSPACE/.actions/$dir" ]; then
-            cp -r "$GITHUB_ACTION_PATH/$dir" "$GITHUB_WORKSPACE/.actions/$dir"
-          fi
-        done
-
+    # Sub-actions use full repo refs (not workspace copies) to survive
+    # git clean -ffdx from subsequent actions/checkout steps.
     - name: Setup S3 cache credentials
       if: steps.cache-backend.outputs.cache-backend == 's3'
       id: aws-auth
-      uses: ./.actions/credential-setup
+      uses: SonarSource/gh-action_cache/credential-setup@v1
       with:
         environment: ${{ inputs.environment }}
 
@@ -147,7 +135,7 @@ runs:
     # runs-on/cache save always has valid AWS credentials.
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      uses: ./.actions/credential-guard
+      uses: SonarSource/gh-action_cache/credential-guard@v1
       with:
         credentials-file: ${{ steps.aws-auth.outputs.credentials-file }}
 

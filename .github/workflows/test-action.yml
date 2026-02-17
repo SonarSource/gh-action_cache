@@ -291,3 +291,40 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest requests
+
+  # Regression test: git clean -ffdx must not break credential-guard post step
+  # Reproduces: https://github.com/SonarSource/sonar-dummy/actions/runs/21997126216
+  test-s3-cache-survives-git-clean:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          version: 2025.7.12
+
+      - name: Cache with S3
+        id: cache-test
+        uses: ./
+        with:
+          path: ~/.cache/pip
+          key: git-clean-test-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: git-clean-test-${{ runner.os }}-
+          environment: dev
+          backend: s3
+
+      # Simulate what actions/checkout does when clean: true (the default).
+      # This is exactly what broke the .actions/ workspace copy approach.
+      - name: Run git clean -ffdx (simulates actions/checkout clean)
+        run: |
+          git clean -ffdx
+          echo "Workspace cleaned. Post steps should still work."
+
+      - name: Create something to cache
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest requests
+
+      # SUCCESS: credential-guard post step runs, then runs-on/cache saves to S3

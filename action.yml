@@ -91,17 +91,17 @@ runs:
       if: steps.cache-backend.outputs.cache-backend == 's3'
       shell: bash
       run: |
-        mkdir -p "$GITHUB_WORKSPACE/.actions"
+        mkdir -p "$GITHUB_WORKSPACE/.gac_actions"
         for dir in credential-setup credential-guard; do
-          if [ ! -d "$GITHUB_WORKSPACE/.actions/$dir" ]; then
-            cp -r "$GITHUB_ACTION_PATH/$dir" "$GITHUB_WORKSPACE/.actions/$dir"
+          if [ ! -d "$GITHUB_WORKSPACE/.gac_actions/$dir" ]; then
+            cp -r "$GITHUB_ACTION_PATH/$dir" "$GITHUB_WORKSPACE/.gac_actions/$dir"
           fi
         done
 
     - name: Setup S3 cache credentials
       if: steps.cache-backend.outputs.cache-backend == 's3'
       id: aws-auth
-      uses: ./.actions/credential-setup
+      uses: ./.gac_actions/credential-setup
       with:
         environment: ${{ inputs.environment }}
 
@@ -147,7 +147,7 @@ runs:
     # runs-on/cache save always has valid AWS credentials.
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      uses: ./.actions/credential-guard
+      uses: ./.gac_actions/credential-guard
       with:
         credentials-file: ${{ steps.aws-auth.outputs.credentials-file }}
 

@@ -86,6 +86,13 @@ runs:
     # S3 cache: credential setup → key preparation → cache → credential guard
     # Sub-actions use full repo refs (not workspace copies) to survive
     # git clean -ffdx from subsequent actions/checkout steps.
+    - name: Set action path for scripts
+      if: steps.cache-backend.outputs.cache-backend == 's3'
+      shell: bash
+      run: |
+        ACTION_PATH_CACHE="${{ github.action_path }}"
+        echo "ACTION_PATH_CACHE=$ACTION_PATH_CACHE" >> "$GITHUB_ENV"
+
     - name: Setup S3 cache credentials
       if: steps.cache-backend.outputs.cache-backend == 's3'
       id: aws-auth
@@ -103,7 +110,7 @@ runs:
         INPUT_FALLBACK_BRANCH: ${{ inputs.fallback-branch }}
         GITHUB_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
-      run: $GITHUB_ACTION_PATH/scripts/prepare-keys.sh
+      run: $ACTION_PATH_CACHE/scripts/prepare-keys.sh
 
     - name: Cache on S3
       if: steps.cache-backend.outputs.cache-backend == 's3'
@@ -129,10 +136,8 @@ runs:
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
 
-    # Credential guard: placed AFTER runs-on/cache so its post step
-    # runs BEFORE runs-on/cache's post step (LIFO ordering).
-    # The post step re-exports credentials to GITHUB_ENV, ensuring
-    # runs-on/cache save always has valid AWS credentials.
+    # Credential guard: placed AFTER runs-on/cache so its post step runs BEFORE runs-on/cache's post step (LIFO ordering).
+    # The post step re-exports credentials to GITHUB_ENV, ensuring runs-on/cache save always has valid AWS credentials.
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'
       uses: SonarSource/gh-action_cache/credential-guard@v1

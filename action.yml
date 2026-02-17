@@ -86,17 +86,22 @@ runs:
     # S3 cache: credential setup → key preparation → cache → credential guard
     # Composite action `./relative-path` resolves from workspace root.
     # When used from another repo, sub-actions won't exist there;
-    # copy them from the action's own directory.
+    # create symlinks to them from the action's installation directory.
     - name: Prepare credential sub-actions
       if: steps.cache-backend.outputs.cache-backend == 's3'
       shell: bash
       run: |
-        mkdir -p "$GITHUB_WORKSPACE/.gac_actions"
-        for dir in credential-setup credential-guard; do
-          if [ ! -d "$GITHUB_WORKSPACE/.gac_actions/$dir" ]; then
-            cp -r "$GITHUB_ACTION_PATH/$dir" "$GITHUB_WORKSPACE/.gac_actions/$dir"
-          fi
-        done
+        echo "::group::Fix for using local actions"
+        echo "GITHUB_ACTION_PATH=$GITHUB_ACTION_PATH"
+        echo "github.action_path=${{ github.action_path }}"
+        ACTION_PATH_CACHE="${{ github.action_path }}"
+        echo "ACTION_PATH_CACHE=$ACTION_PATH_CACHE" >> "$GITHUB_ENV"
+
+        mkdir -p ".gac_actions"
+        ln -sf "$ACTION_PATH_CACHE/credential-setup" .gac_actions/credential-setup
+        ln -sf "$ACTION_PATH_CACHE/credential-guard" .gac_actions/credential-guard
+        ls -la .gac_actions/*
+        echo "::endgroup::"
 
     - name: Setup S3 cache credentials
       if: steps.cache-backend.outputs.cache-backend == 's3'
@@ -115,7 +120,7 @@ runs:
         INPUT_FALLBACK_BRANCH: ${{ inputs.fallback-branch }}
         GITHUB_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
-      run: $GITHUB_ACTION_PATH/scripts/prepare-keys.sh
+      run: $ACTION_PATH_CACHE/scripts/prepare-keys.sh
 
     - name: Cache on S3
       if: steps.cache-backend.outputs.cache-backend == 's3'
@@ -141,10 +146,8 @@ runs:
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
 
-    # Credential guard: placed AFTER runs-on/cache so its post step
-    # runs BEFORE runs-on/cache's post step (LIFO ordering).
-    # The post step re-exports credentials to GITHUB_ENV, ensuring
-    # runs-on/cache save always has valid AWS credentials.
+    # Credential guard: placed AFTER runs-on/cache so its post step runs BEFORE runs-on/cache's post step (LIFO ordering).
+    # The post step re-exports credentials to GITHUB_ENV, ensuring runs-on/cache save always has valid AWS credentials.
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'
       uses: ./.gac_actions/credential-guard

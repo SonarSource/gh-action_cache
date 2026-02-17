@@ -83,9 +83,6 @@ runs:
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
 
-    # S3 cache: credential setup → key preparation → cache → credential guard
-    # Sub-actions use full repo refs (not workspace copies) to survive
-    # git clean -ffdx from subsequent actions/checkout steps.
     - name: Set action path for scripts
       if: steps.cache-backend.outputs.cache-backend == 's3'
       shell: bash
@@ -136,8 +133,6 @@ runs:
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
 
-    # Credential guard: placed AFTER runs-on/cache so its post step runs BEFORE runs-on/cache's post step (LIFO ordering).
-    # The post step re-exports credentials to GITHUB_ENV, ensuring runs-on/cache save always has valid AWS credentials.
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'
       uses: SonarSource/gh-action_cache/credential-guard@v1

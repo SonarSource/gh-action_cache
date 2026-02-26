@@ -30,6 +30,11 @@ inputs:
       default branch is used.
   backend:
     description: Force cache backend ('github' or 's3'). If not set, automatically determined based on repository visibility.
+  invalidate-cache-on:
+    description: >
+      String to search for in the latest commit message to trigger cache invalidation
+      (delete existing cache entry so a fresh one is saved). Leave empty to disable.
+    default: '[clear-cache]'
 
 outputs:
   cache-hit:
@@ -70,6 +75,31 @@ runs:
 
         echo "cache-backend=$CACHE_BACKEND" >> "$GITHUB_OUTPUT"
 
+    - name: Check for cache invalidation trigger
+      id: cache-invalidate-check
+      shell: bash
+      env:
+        INVALIDATE_CACHE_ON: ${{ inputs.invalidate-cache-on }}
+      run: |
+        SHOULD_INVALIDATE=false
+        if [[ -n "$INVALIDATE_CACHE_ON" ]]; then
+          COMMIT_MSG=$(git log -1 --format=%B HEAD 2>/dev/null || echo "")
+          if echo "$COMMIT_MSG" | grep -qF "$INVALIDATE_CACHE_ON"; then
+            echo "Cache invalidation triggered by pattern '$INVALIDATE_CACHE_ON' in commit message"
+            SHOULD_INVALIDATE=true
+          fi
+        fi
+        echo "should-invalidate=$SHOULD_INVALIDATE" >> "$GITHUB_OUTPUT"
+
+    - name: Invalidate GitHub cache
+      if: steps.cache-backend.outputs.cache-backend == 'github' && steps.cache-invalidate-check.outputs.should-invalidate == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh api -X DELETE "/repos/${{ github.repository }}/actions/caches?key=${{ inputs.key }}" || true
+        echo "GitHub cache deleted for key: ${{ inputs.key }}"
+
     - name: Cache with GitHub Actions (public repos)
       if: steps.cache-backend.outputs.cache-backend == 'github'
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -108,6 +138,23 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: $ACTION_PATH_CACHE/scripts/prepare-keys.sh
+
+    - name: Invalidate S3 cache
+      if: steps.cache-backend.outputs.cache-backend == 's3' && steps.cache-invalidate-check.outputs.should-invalidate == 'true'
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
+        AWS_DEFAULT_REGION: eu-central-1
+        AWS_REGION: eu-central-1
+        AWS_PROFILE: ''
+        AWS_DEFAULT_PROFILE: ''
+        BUCKET: sonarsource-s3-cache-${{ inputs.environment }}-bucket
+        BRANCH_KEY: ${{ steps.prepare-keys.outputs.branch-key }}
+      run: |
+        aws s3 rm "s3://${BUCKET}/${BRANCH_KEY}" --recursive || true
+        echo "S3 cache deleted for key: ${BRANCH_KEY}"
 
     - name: Cache on S3
       if: steps.cache-backend.outputs.cache-backend == 's3'

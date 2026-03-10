@@ -72,7 +72,27 @@ Bundled output goes to `credential-setup/dist/` and `credential-guard/dist/`. Th
 | `enableCrossOsArchive` | Enable cross-OS cache compatibility                                                                                                              | No       | `false` |
 | `fail-on-cache-miss`   | Fail workflow if cache entry not found                                                                                                           | No       | `false` |
 | `lookup-only`          | Only check cache existence without downloading                                                                                                   | No       | `false` |
-| `backend`              | Force specific backend: `github` or `s3`                                                                                                         | No       |         |
+| `backend`              | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |         |
+
+## Backend Selection
+
+The cache backend is determined in the following priority order:
+
+1. **`inputs.backend`** — explicit input in the action step (`github` or `s3`)
+2. **`CACHE_BACKEND` environment variable** — set at the job or workflow level (`github` or `s3`)
+3. **Repository visibility** — `github` for public repos, `s3` for private/internal repos
+
+The `CACHE_BACKEND` env var is useful when the cache action is called indirectly through a composite action and you cannot set the `backend`
+input directly:
+
+```yaml
+jobs:
+  build:
+    env:
+      CACHE_BACKEND: s3   # forces S3 for all cache steps, including those in reusable actions
+    steps:
+      - uses: SonarSource/some-other-action@v1  # internally calls gh-action_cache
+```
 
 ## Outputs
 

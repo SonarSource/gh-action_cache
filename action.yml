@@ -29,7 +29,9 @@ inputs:
     description: Optional maintenance branch for fallback restore keys (pattern 'branch-*', 's3' backend only). If not set, the repository
       default branch is used.
   backend:
-    description: Force cache backend ('github' or 's3'). If not set, automatically determined based on repository visibility.
+    description: >
+      Force cache backend ('github' or 's3'). If not set, falls back to the CACHE_BACKEND environment variable if defined,
+      then automatically determined based on repository visibility.
 
 outputs:
   cache-hit:
@@ -49,7 +51,9 @@ runs:
       run: |
         if [[ "$FORCED_BACKEND" == "github" || "$FORCED_BACKEND" == "s3" ]]; then
           CACHE_BACKEND="$FORCED_BACKEND"
-          echo "Using forced backend: $CACHE_BACKEND"
+          echo "Using forced backend from input: $CACHE_BACKEND"
+        elif [[ "$CACHE_BACKEND" == "github" || "$CACHE_BACKEND" == "s3" ]]; then
+          echo "Using backend from CACHE_BACKEND environment variable: $CACHE_BACKEND"
         else
           # If visibility is not available in the event, try to get it from the API
           if [[ -z "$REPO_VISIBILITY" || "$REPO_VISIBILITY" = "null" ]]; then

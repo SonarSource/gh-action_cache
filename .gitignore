@@ -30,8 +30,7 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-# npm cache
-.npm
-
-# Claude Code
 .claude
+.idea
+.npm
+.serena

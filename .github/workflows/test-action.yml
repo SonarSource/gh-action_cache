@@ -328,3 +328,18 @@ jobs:
           pip install pytest requests
 
       # SUCCESS: credential-guard post step runs, then runs-on/cache saves to S3
+
+  test-cleanup-dry-run:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Dry-run cleanup against real S3
+        uses: ./cleanup
+        with:
+          branch: test-cleanup-nonexistent
+          environment: dev
+          dry-run: "true"

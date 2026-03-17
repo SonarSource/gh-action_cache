@@ -1,0 +1,54 @@
+name: S3 Cache Cleanup
+description: Delete S3 cache entries by branch name and optional key prefix
+author: SonarSource
+
+inputs:
+  branch:
+    description: >
+      Branch name to clean cache for.
+      Examples: "master", "feature/my-branch".
+      Automatically finds cache entries regardless of how they were created (PR or push).
+    required: true
+  key:
+    description: >
+      Cache key prefix to delete (optional). If empty, deletes ALL cache entries for the branch.
+      Examples: "sccache-Linux-", "orchestrator-2026-"
+    required: false
+    default: ""
+  environment:
+    description: Environment to use ('dev' or 'prod')
+    required: false
+    default: prod
+  dry-run:
+    description: Preview deletions without executing them
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Set action path
+      shell: bash
+      run: |
+        echo "ACTION_PATH_CLEANUP=${{ github.action_path }}" >> "$GITHUB_ENV"
+
+    - name: Setup S3 cache credentials
+      id: aws-auth
+      uses: SonarSource/gh-action_cache/credential-setup@v1
+      with:
+        environment: ${{ inputs.environment }}
+
+    - name: Run cache cleanup
+      shell: bash
+      env:
+        CLEANUP_BRANCH: ${{ inputs.branch }}
+        CLEANUP_KEY: ${{ inputs.key }}
+        S3_BUCKET: sonarsource-s3-cache-${{ inputs.environment }}-bucket
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        AWS_ACCESS_KEY_ID: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
+        AWS_DEFAULT_REGION: eu-central-1
+        AWS_REGION: eu-central-1
+      run: "$ACTION_PATH_CLEANUP/../scripts/cleanup-cache.sh"

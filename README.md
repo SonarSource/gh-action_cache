@@ -212,3 +212,59 @@ jobs:
 
 The AWS S3 bucket lifecycle rules apply to delete the old files. The content from default branches expires in 60 days and for feature
 branches in 30 days.
+
+## Cache Cleanup
+
+Delete S3 cache entries for a specific branch and/or cache key prefix without waiting for the 30-day lifecycle expiry.
+
+### Setup
+
+Add a cleanup workflow to your repository:
+
+```yaml
+# .github/workflows/cleanup-cache.yml
+name: Cleanup S3 Cache
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch name (e.g., 'feature/my-branch')"
+        required: true
+        type: string
+      key:
+        description: "Cache key prefix (optional). Leave empty to delete all cache for the branch."
+        required: false
+        type: string
+        default: ""
+      dry-run:
+        description: "Preview deletions without executing them"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  cleanup:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: SonarSource/gh-action_cache/cleanup@v1
+        with:
+          branch: ${{ inputs.branch }}
+          key: ${{ inputs.key }}
+          dry-run: ${{ inputs.dry-run }}
+```
+
+> **Important:** The workflow must be dispatched from a **default/protected branch** (e.g., `main` or `master`).
+> This is required by the IAM policy for cross-branch cache deletion.
+
+### Running Cleanup
+
+**Via GitHub Actions UI:**
+
+1. Go to **Actions** > **Cleanup S3 Cache** > **Run workflow**
+2. Enter the branch name as you know it (e.g., `feature/my-branch` or `master`)
+3. Optionally enter a cache key prefix (e.g., `sccache-Linux-`)
+4. Optionally enable **dry-run** to preview what would be deleted

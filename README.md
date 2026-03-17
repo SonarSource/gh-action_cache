@@ -65,14 +65,15 @@ Bundled output goes to `credential-setup/dist/` and `credential-guard/dist/`. Th
 |------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|----------|---------|
 | `path`                 | Files, directories, and wildcard patterns to cache                                                                                               | Yes      |         |
 | `key`                  | Explicit key for restoring and saving cache                                                                                                      | Yes      |         |
-| `restore-keys`         | Ordered list of prefix-matched keys for fallback                                                                                                 | No       |         |
-| `fallback-branch`      | Optional maintenance branch for fallback restore keys (pattern: `branch-*`, S3 backend only). If not set, the repository default branch is used. | No       |         |
-| `environment`          | Environment to use (dev or prod, S3 backend only)                                                                                                | No       | `prod`  |
-| `upload-chunk-size`    | Chunk size for large file uploads (bytes)                                                                                                        | No       |         |
-| `enableCrossOsArchive` | Enable cross-OS cache compatibility                                                                                                              | No       | `false` |
-| `fail-on-cache-miss`   | Fail workflow if cache entry not found                                                                                                           | No       | `false` |
-| `lookup-only`          | Only check cache existence without downloading                                                                                                   | No       | `false` |
-| `backend`              | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |         |
+| `restore-keys`                  | Ordered list of prefix-matched keys for fallback                                                                                                 | No       |         |
+| `fallback-to-default-branch`    | Automatically add a fallback restore key pointing to the default branch cache (S3 backend only). Disable if you want strict branch isolation.    | No       | `true`  |
+| `fallback-branch`               | Optional maintenance branch for fallback restore keys (pattern: `branch-*`, S3 backend only). If not set, the repository default branch is used. | No       |         |
+| `environment`                   | Environment to use (dev or prod, S3 backend only)                                                                                                | No       | `prod`  |
+| `upload-chunk-size`             | Chunk size for large file uploads (bytes)                                                                                                        | No       |         |
+| `enableCrossOsArchive`          | Enable cross-OS cache compatibility                                                                                                              | No       | `false` |
+| `fail-on-cache-miss`            | Fail workflow if cache entry not found                                                                                                           | No       | `false` |
+| `lookup-only`                   | Only check cache existence without downloading                                                                                                   | No       | `false` |
+| `backend`                       | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |         |
 
 ## Backend Selection
 
@@ -114,20 +115,17 @@ A GitHub Action that provides branch-specific caching on AWS S3 with intelligent
 
 ### How Restore Keys Work
 
-**Important**: This action's restore key behavior differs from the standard GitHub cache action.
-To enable fallback to default branch caches, you **must** use the `restore-keys` property.
-
 #### Cache Key Resolution Order
 
-When you provide `restore-keys`, the action searches for cache entries in this order:
+The action searches for cache entries in this order:
 
 1. **Primary key**: `${BRANCH_NAME}/${key}`
-2. **Branch-specific restore keys**: `${BRANCH_NAME}/${restore-key}` (for each restore key)
-3. **Default branch fallbacks**:
-    - `refs/heads/${DEFAULT_BRANCH}/${restore-key}` (for each restore key, where `DEFAULT_BRANCH` is dynamically obtained from the
-      repository)
+2. **Branch-specific restore keys**: `${BRANCH_NAME}/${restore-key}` (for each restore key provided)
+3. **Default branch fallbacks** (when `fallback-to-default-branch: true`, the default):
+    - If `restore-keys` are provided: `refs/heads/${DEFAULT_BRANCH}/${restore-key}` for each restore key
+    - If no `restore-keys` are provided: `refs/heads/${DEFAULT_BRANCH}/${key}` (exact-match fallback)
 
-#### Example
+#### Example — with restore-keys
 
 ```yaml
 - uses: SonarSource/gh-action_cache@v1
@@ -140,12 +138,36 @@ When you provide `restore-keys`, the action searches for cache entries in this o
 For a feature branch `feature/new-ui`, this will search for:
 
 1. `feature/new-ui/node-linux-abc123...` (exact match)
-2. `feature/new-ui/node-linux` (branch-specific partial match)
-3. `refs/heads/main/node-linux` (default branch fallback, assuming `main` is the repository's default branch)
+2. `feature/new-ui/node-linux-` (branch-specific partial match)
+3. `refs/heads/main/node-linux-` (default branch fallback, assuming `main` is the repository's default branch)
+
+#### Example — without restore-keys
+
+```yaml
+- uses: SonarSource/gh-action_cache@v1
+  with:
+    path: ~/.npm
+    key: node-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+```
+
+For a feature branch `feature/new-ui`, this will search for:
+
+1. `feature/new-ui/node-linux-abc123...` (exact match)
+2. `refs/heads/main/node-linux-abc123...` (exact-match fallback on default branch)
+
+To disable the automatic default branch fallback:
+
+```yaml
+- uses: SonarSource/gh-action_cache@v1
+  with:
+    path: ~/.npm
+    key: node-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+    fallback-to-default-branch: false
+```
 
 #### Key Differences from Standard Cache Action
 
-- **Fallback requires restore-keys**: Without `restore-keys`, the action only looks for branch-specific cache entries
+- **Automatic default branch fallback**: By default, feature branches fall back to the default branch cache when no branch-specific entry exists
 - **Dynamic default branch detection**: The action detects your default branch using the GitHub API and uses it for fallback
 - **Branch isolation**: Each branch maintains its own cache namespace, preventing cross-branch cache pollution
 

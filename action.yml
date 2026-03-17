@@ -26,8 +26,15 @@ inputs:
     description: Environment to use ('dev' or 'prod', 's3' backend only).
     default: prod
   fallback-branch:
-    description: Optional maintenance branch for fallback restore keys (pattern 'branch-*', 's3' backend only). If not set, the repository
-      default branch is used.
+    description: >
+      Explicit fallback branch for restore keys (pattern 'branch-*', 's3' backend only).
+      Always honoured when set, regardless of 'fallback-to-default-branch'.
+      If not set, the repository default branch is used when 'fallback-to-default-branch' is true.
+  fallback-to-default-branch:
+    description: >
+      When enabled, automatically adds a fallback restore key pointing to the default branch cache.
+      Only applies to the S3 backend.
+    default: 'true'
   backend:
     description: >
       Force cache backend ('github' or 's3'). If not set, falls back to the CACHE_BACKEND environment variable if defined,
@@ -109,6 +116,7 @@ runs:
         INPUT_KEY: ${{ inputs.key }}
         INPUT_RESTORE_KEYS: ${{ inputs.restore-keys }}
         INPUT_FALLBACK_BRANCH: ${{ inputs.fallback-branch }}
+        INPUT_FALLBACK_TO_DEFAULT_BRANCH: ${{ inputs.fallback-to-default-branch }}
         GITHUB_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: $ACTION_PATH_CACHE/scripts/prepare-keys.sh

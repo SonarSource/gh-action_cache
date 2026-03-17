@@ -1,0 +1,55 @@
+name: Cleanup S3 Cache
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch name to clean cache for (e.g., 'feature/my-branch')"
+        required: true
+        type: string
+      key:
+        description: "Cache key prefix to delete (e.g., 'sccache-Linux-'). Leave empty to delete all cache for the branch."
+        required: false
+        type: string
+        default: ""
+      environment:
+        description: "Target environment"
+        required: false
+        type: choice
+        options:
+          - prod
+          - dev
+        default: prod
+      dry-run:
+        description: "Preview mode - show what would be deleted without deleting"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  cleanup:
+    runs-on: github-ubuntu-latest-s
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup AWS credentials
+        id: creds
+        uses: SonarSource/gh-action_cache/credential-setup@v1
+        with:
+          environment: ${{ inputs.environment }}
+
+      - name: Run cache cleanup
+        env:
+          CLEANUP_BRANCH: ${{ inputs.branch }}
+          CLEANUP_KEY: ${{ inputs.key }}
+          S3_BUCKET: sonarsource-s3-cache-${{ inputs.environment }}-bucket
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          AWS_ACCESS_KEY_ID: ${{ steps.creds.outputs.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ steps.creds.outputs.AWS_SESSION_TOKEN }}
+          AWS_DEFAULT_REGION: eu-central-1
+          AWS_PROFILE: ""
+          AWS_DEFAULT_PROFILE: ""
+        run: bash scripts/cleanup-cache.sh

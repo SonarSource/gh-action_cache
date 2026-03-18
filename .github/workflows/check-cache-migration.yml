@@ -1,0 +1,178 @@
+---
+name: Check cache migration (GitHub → S3)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Cache environment to check
+        required: true
+        default: prod
+        type: choice
+        options:
+          - prod
+          - dev
+
+jobs:
+  check-migration:
+    runs-on: ubuntu-latest
+    name: Compare GitHub cache vs S3
+    permissions:
+      id-token: write
+      contents: read
+      actions: write  # required to list GitHub cache entries and set the opt-out repository variable
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup S3 cache credentials
+        id: aws-auth
+        uses: SonarSource/gh-action_cache/credential-setup@v1
+        with:
+          environment: ${{ inputs.environment }}
+
+      - name: List GitHub cache entries
+        id: gh-caches
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # Fetch all GitHub cache entries (paginated, up to 10 000)
+          PAGE=1
+          PER_PAGE=100
+          ALL_ENTRIES="[]"
+          while true; do
+            RESPONSE=$(curl -s -f \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/caches?per_page=${PER_PAGE}&page=${PAGE}")
+            ENTRIES=$(echo "$RESPONSE" | jq '.actions_caches')
+            COUNT=$(echo "$ENTRIES" | jq 'length')
+            ALL_ENTRIES=$(echo "$ALL_ENTRIES $ENTRIES" | jq -s 'add')
+            if [[ "$COUNT" -lt "$PER_PAGE" ]]; then
+              break
+            fi
+            PAGE=$((PAGE + 1))
+          done
+
+          # Filter: include only target branches, exclude unwanted key patterns
+          FILTERED=$(echo "$ALL_ENTRIES" | jq '[
+            .[] |
+            select(
+              (.ref | test("^refs/heads/(main|master|branch-.+|dogfood-on-.+|feature/long/.+)$")) and
+              (.key | test("^(build-number-|mise-)") | not)
+            ) |
+            { ref: .ref, key: .key }
+          ]')
+
+          TOTAL=$(echo "$ALL_ENTRIES" | jq 'length')
+          INCLUDED=$(echo "$FILTERED" | jq 'length')
+          echo "Total GitHub cache entries: $TOTAL"
+          echo "Included for migration check: $INCLUDED"
+
+          # Write to file for next step
+          echo "$FILTERED" > /tmp/gh_caches.json
+          echo "included-count=$INCLUDED" >> "$GITHUB_OUTPUT"
+
+      - name: List S3 cache objects
+        id: s3-objects
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
+          AWS_DEFAULT_REGION: eu-central-1
+          S3_BUCKET: sonarsource-s3-cache-${{ inputs.environment }}-bucket
+        run: |
+          # List all S3 objects with pagination handled internally by the CLI
+          aws s3 ls "s3://$S3_BUCKET/" --recursive \
+            | awk '{print $4}' \
+            | sort > /tmp/s3_keys.txt
+
+          S3_COUNT=$(wc -l < /tmp/s3_keys.txt)
+          echo "Total S3 cache objects: $S3_COUNT"
+          echo "s3-count=$S3_COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Compare and report
+        id: compare
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          INCLUDED=$(jq 'length' /tmp/gh_caches.json)
+          MIGRATED=0
+          MISSING=()
+
+          while IFS= read -r ENTRY; do
+            REF=$(echo "$ENTRY" | jq -r '.ref')
+            KEY=$(echo "$ENTRY" | jq -r '.key')
+            # S3 keys use full ref for push events (refs/heads/main/{key}) and short branch name for PR events (feat/someBranch/{key}).
+            # Check both forms since we cannot know which was used at save time.
+            REF_SHORT="${REF#refs/heads/}"
+            S3_KEY_FULL="${REF}/${KEY}"
+            S3_KEY_SHORT="${REF_SHORT}/${KEY}"
+            if grep -qxF "$S3_KEY_FULL" /tmp/s3_keys.txt || grep -qxF "$S3_KEY_SHORT" /tmp/s3_keys.txt; then
+              MIGRATED=$((MIGRATED + 1))
+            else
+              MISSING+=("$S3_KEY_SHORT")
+            fi
+          done < <(jq -c '.[]' /tmp/gh_caches.json)
+
+          echo ""
+          echo "========================================="
+          echo " Migration status: $MIGRATED / $INCLUDED"
+          echo "========================================="
+
+          if [[ "${#MISSING[@]}" -gt 0 ]]; then
+            echo ""
+            echo "Missing in S3 (${#MISSING[@]} entries):"
+            printf '  %s\n' "${MISSING[@]}"
+          fi
+
+          if [[ "$MIGRATED" -eq "$INCLUDED" && "$INCLUDED" -gt 0 ]]; then
+            echo ""
+            echo "All included GitHub cache entries are present in S3."
+            echo "migration-complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "migration-complete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set CACHE_IMPORT_GITHUB=false (migration complete)
+        if: steps.compare.outputs.migration-complete == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          VARIABLE_NAME="CACHE_IMPORT_GITHUB"
+
+          # Check if variable already exists
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/variables/${VARIABLE_NAME}")
+
+          if [[ "$STATUS" == "200" ]]; then
+            # Update existing variable
+            curl -s -f -X PATCH \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/variables/${VARIABLE_NAME}" \
+              -d '{"name":"'"$VARIABLE_NAME"'","value":"false"}'
+            echo "Updated repository variable $VARIABLE_NAME=false"
+          else
+            # Create new variable
+            curl -s -f -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/variables" \
+              -d '{"name":"'"$VARIABLE_NAME"'","value":"false"}'
+            echo "Created repository variable $VARIABLE_NAME=false"
+          fi
+
+          echo ""
+          echo "Migration complete — CACHE_IMPORT_GITHUB set to false"
+          echo "Import fallback will be disabled on next workflow runs."
+          echo "To re-enable migration mode, delete or set CACHE_IMPORT_GITHUB=true in repository variables."

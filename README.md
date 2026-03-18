@@ -60,21 +60,29 @@ These must be committed since GitHub Actions runs them directly.
     restore-keys: cache-${{ runner.os }}-
 ```
 
+### Input Environment Variables
+
+| Environment Variable  | Description                                                                       |
+|-----------------------|-----------------------------------------------------------------------------------|
+| `CACHE_BACKEND`       | Force specific backend: `github` or `s3` (overrides auto-detection)               |
+| `CACHE_IMPORT_GITHUB` | Disable GitHub cache fallback for S3 backend (migration mode) when set to `false` |
+
 ## Inputs
 
-| Input                  | Description                                                                                                                                      | Required | Default |
-|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|----------|---------|
-| `path`                 | Files, directories, and wildcard patterns to cache                                                                                               | Yes      |         |
-| `key`                  | Explicit key for restoring and saving cache                                                                                                      | Yes      |         |
-| `restore-keys`                  | Ordered list of prefix-matched keys for fallback                                                                                                 | No       |         |
-| `fallback-to-default-branch`    | Automatically add a fallback restore key pointing to the default branch cache (S3 backend only). Disable if you want strict branch isolation.    | No       | `false`  |
-| `fallback-branch`               | Optional maintenance branch for fallback restore keys (pattern: `branch-*`, S3 backend only). If not set, the repository default branch is used. | No       |         |
-| `environment`                   | Environment to use (dev or prod, S3 backend only)                                                                                                | No       | `prod`  |
-| `upload-chunk-size`             | Chunk size for large file uploads (bytes)                                                                                                        | No       |         |
-| `enableCrossOsArchive`          | Enable cross-OS cache compatibility                                                                                                              | No       | `false` |
-| `fail-on-cache-miss`            | Fail workflow if cache entry not found                                                                                                           | No       | `false` |
-| `lookup-only`                   | Only check cache existence without downloading                                                                                                   | No       | `false` |
-| `backend`                       | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |         |
+| Input                        | Description                                                                                                                                      | Required | Default |
+|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|----------|---------|
+| `path`                       | Files, directories, and wildcard patterns to cache                                                                                               | Yes      |         |
+| `key`                        | Explicit key for restoring and saving cache                                                                                                      | Yes      |         |
+| `restore-keys`               | Ordered list of prefix-matched keys for fallback                                                                                                 | No       |         |
+| `fallback-to-default-branch` | Automatically add a fallback restore key pointing to the default branch cache (S3 backend only). Disable if you want strict branch isolation.    | No       | `false` |
+| `fallback-branch`            | Optional maintenance branch for fallback restore keys (pattern: `branch-*`, S3 backend only). If not set, the repository default branch is used. | No       |         |
+| `environment`                | Environment to use (dev or prod, S3 backend only)                                                                                                | No       | `prod`  |
+| `upload-chunk-size`          | Chunk size for large file uploads (bytes)                                                                                                        | No       |         |
+| `enableCrossOsArchive`       | Enable cross-OS cache compatibility                                                                                                              | No       | `false` |
+| `fail-on-cache-miss`         | Fail workflow if cache entry not found                                                                                                           | No       | `false` |
+| `lookup-only`                | Only check cache existence without downloading                                                                                                   | No       | `false` |
+| `backend`                    | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |         |
+| `import-github-cache`        | Import GitHub cache to S3 when no S3 cache exists (migration mode, S3 backend only). Takes priority over `CACHE_IMPORT_GITHUB` env var.          | No       | `true`  |
 
 ## Backend Selection
 
@@ -84,16 +92,75 @@ The cache backend is determined in the following priority order:
 2. **`CACHE_BACKEND` environment variable** — set at the job or workflow level (`github` or `s3`)
 3. **Repository visibility** — `github` for public repos, `s3` for private/internal repos
 
-The `CACHE_BACKEND` env var is useful when the cache action is called indirectly through a composite action and you cannot set the `backend`
-input directly:
+The `CACHE_BACKEND` env var is useful when the cache action is called indirectly through a composite action, and you cannot set the
+`backend` input directly, or when you want to enforce the same backend for all cache steps in a workflow without modifying each step:
+
+```yaml
+env:
+  CACHE_BACKEND: s3   # forces S3 for all cache steps, including those in reusable actions
+```
+
+## Migration Mode (GitHub cache → S3)
+
+When switching from GitHub Actions cache to S3, existing cache entries live only in GitHub and would need to be rebuilt from scratch.
+Migration mode bridges this gap: when using the S3 backend and no S3 cache exists, the action automatically falls back to restore
+from GitHub Actions cache using the original key. The S3 post-job step then saves the restored content to S3, pre-provisioning it
+for subsequent runs.
+
+Migration mode is **enabled by default** for S3 backend. Once all relevant entries have been migrated to S3, disable it to avoid
+the overhead of the GitHub fallback attempt on every cache miss.
+
+**Disable resolution order** (first match wins):
+
+1. **`import-github-cache: 'false'`** — action input in the step
+2. **`CACHE_IMPORT_GITHUB=false`** — environment variable at job or workflow level (can be sourced from a repository variable)
+3. Default: `true`
+
+**Disabling via repository variable** (recommended for gradual rollout):
 
 ```yaml
 jobs:
   build:
     env:
-      CACHE_BACKEND: s3   # forces S3 for all cache steps, including those in reusable actions
+      CACHE_IMPORT_GITHUB: ${{ vars.CACHE_IMPORT_GITHUB }}
     steps:
-      - uses: SonarSource/some-other-action@v1  # internally calls gh-action_cache
+      - uses: SonarSource/gh-action_cache@v1
+```
+
+Set the `CACHE_IMPORT_GITHUB` repository variable to `false` once migration is complete — no workflow changes needed.
+
+**Behavior with `fail-on-cache-miss`:** when migration mode is active, the S3 miss does not immediately fail the job.
+The action tries the GitHub fallback first and only fails if both S3 and GitHub report a cache miss.
+
+### Checking migration progress
+
+`gh-action_cache` ships a sample workflow at `.github/workflows/check-cache-migration.yml` that you must **copy into
+each repository** using the S3 backend. It compares GitHub cache entries against S3 objects for that repository and
+automatically disables the import fallback once migration is complete.
+
+**What it checks:** branches matching `main`, `master`, `branch-*`, `dogfood-on-*`, `feature/long/*`, excluding
+transient keys (`build-number-*`, `mise-*`).
+
+**When all included entries are present in S3**, the workflow automatically sets `CACHE_IMPORT_GITHUB=false` as a
+repository variable, disabling the import fallback for all subsequent runs if the environment variable is set with
+`${{ vars.CACHE_IMPORT_GITHUB }}` in the workflow.
+
+**Trigger manually via GitHub CLI:**
+
+```bash
+# Check prod environment (default)
+gh workflow run check-cache-migration.yml
+
+# Check dev environment
+gh workflow run check-cache-migration.yml -f environment=dev
+```
+
+To re-enable migration mode after it has been automatically disabled, delete or reset the repository variable:
+
+```bash
+gh variable delete CACHE_IMPORT_GITHUB
+# or
+gh variable set CACHE_IMPORT_GITHUB --body "true"
 ```
 
 ## Outputs
@@ -288,13 +355,13 @@ jobs:
 
 ### Modes of Operation
 
-| Scenario | Branch | Key | Dry-run |
-|----------|--------|-----|---------|
-| List all cache entries | _(empty)_ | _(empty)_ | n/a |
-| Preview what would be deleted | `feature/my-branch` | _(optional)_ | `true` |
-| Delete cache for a branch | `feature/my-branch` | _(optional)_ | `false` |
-| Delete key for given branch | `feature/my-branch`  | `sccache-Linux-` | `false` |
-| Delete key across all branches | _(empty)_ | `sccache-Linux-` | `false` |
+| Scenario                       | Branch              | Key              | Dry-run |
+|--------------------------------|---------------------|------------------|---------|
+| List all cache entries         | _(empty)_           | _(empty)_        | n/a     |
+| Preview what would be deleted  | `feature/my-branch` | _(optional)_     | `true`  |
+| Delete cache for a branch      | `feature/my-branch` | _(optional)_     | `false` |
+| Delete key for given branch    | `feature/my-branch` | `sccache-Linux-` | `false` |
+| Delete key across all branches | _(empty)_           | `sccache-Linux-` | `false` |
 
 ### Running via GitHub CLI
 

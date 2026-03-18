@@ -39,11 +39,16 @@ inputs:
     description: >
       Force cache backend ('github' or 's3'). If not set, falls back to the CACHE_BACKEND environment variable if defined,
       then automatically determined based on repository visibility.
+  import-github-cache:
+    description: >
+      Import GitHub cache to S3 when no S3 cache exists (migration mode). Enabled by default when using S3 backend.
+      Set to 'false' to disable, or control via the CACHE_IMPORT_GITHUB environment variable.
+    default: ''
 
 outputs:
   cache-hit:
     description: A boolean value to indicate an exact match was found for the primary key
-    value: ${{ steps.github-cache.outputs.cache-hit || steps.s3-cache.outputs.cache-hit }}
+    value: ${{ steps.github-cache.outputs.cache-hit || steps.s3-cache.outputs.cache-hit || steps.github-import.outputs.cache-hit }}
 
 runs:
   using: composite
@@ -121,6 +126,26 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: $ACTION_PATH_CACHE/scripts/prepare-keys.sh
 
+    - name: Determine GitHub cache import mode
+      if: steps.cache-backend.outputs.cache-backend == 's3'
+      id: import-mode
+      shell: bash
+      env:
+        INPUT_IMPORT_GITHUB_CACHE: ${{ inputs.import-github-cache }}
+      run: |
+        # Resolution order: input → CACHE_IMPORT_GITHUB env var → default true
+        if [[ -n "$INPUT_IMPORT_GITHUB_CACHE" ]]; then
+          IMPORT_GITHUB="$INPUT_IMPORT_GITHUB_CACHE"
+          echo "Using import mode from input: $IMPORT_GITHUB"
+        elif [[ -n "${CACHE_IMPORT_GITHUB:-}" ]]; then
+          IMPORT_GITHUB="$CACHE_IMPORT_GITHUB"
+          echo "Using import mode from CACHE_IMPORT_GITHUB environment variable: $IMPORT_GITHUB"
+        else
+          IMPORT_GITHUB="true"
+          echo "Using default import mode: $IMPORT_GITHUB"
+        fi
+        echo "import-github=$IMPORT_GITHUB" >> "$GITHUB_OUTPUT"
+
     - name: Cache on S3
       if: steps.cache-backend.outputs.cache-backend == 's3'
       uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
@@ -142,8 +167,38 @@ runs:
         restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
         upload-chunk-size: ${{ inputs.upload-chunk-size }}
         enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
-        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
+        # When import mode is active, suppress fail-on-cache-miss here: a subsequent step handles it after also attempting the GitHub cache
+        # fallback.
+        fail-on-cache-miss: ${{ steps.import-mode.outputs.import-github == 'true' && 'false' || inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
+
+    - name: Import GitHub cache to S3 (migration fallback)
+      if: >-
+        steps.cache-backend.outputs.cache-backend == 's3' &&
+        steps.s3-cache.outputs.cache-hit != 'true' &&
+        steps.import-mode.outputs.import-github == 'true'
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      id: github-import
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}
+        lookup-only: ${{ inputs.lookup-only }}
+        fail-on-cache-miss: false
+
+    - name: Enforce fail-on-cache-miss after GitHub import fallback
+      if: >-
+        steps.cache-backend.outputs.cache-backend == 's3' &&
+        steps.import-mode.outputs.import-github == 'true' &&
+        inputs.fail-on-cache-miss == 'true' &&
+        steps.s3-cache.outputs.cache-hit != 'true' &&
+        steps.github-import.outputs.cache-matched-key == ''
+      shell: bash
+      env:
+        CACHE_KEY: ${{ inputs.key }}
+      run: |
+        echo "::error::Cache miss: no cache found in S3 or GitHub for key '${CACHE_KEY}'"
+        exit 1
 
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'

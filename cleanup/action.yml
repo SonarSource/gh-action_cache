@@ -1,5 +1,5 @@
 name: S3 Cache Cleanup
-description: Delete S3 cache entries by branch name and optional key prefix
+description: List or delete S3 cache entries by branch name and optional key prefix
 author: SonarSource
 
 inputs:
@@ -7,11 +7,12 @@ inputs:
     description: >
       Branch name to clean cache for.
       Examples: "master", "feature/my-branch".
-      Automatically finds cache entries regardless of how they were created (PR or push).
-    required: true
+      If omitted, lists all cache entries (discovery mode).
+    required: false
+    default: ""
   key:
     description: >
-      Cache key prefix to delete (optional). If empty, deletes ALL cache entries for the branch.
+      Cache key prefix to filter (optional). Works in both list and delete mode.
       Examples: "sccache-Linux-", "orchestrator-2026-"
     required: false
     default: ""
@@ -20,7 +21,7 @@ inputs:
     required: false
     default: prod
   dry-run:
-    description: Preview deletions without executing them
+    description: Preview deletions without executing them (only applies when branch is set)
     required: false
     default: "false"
 

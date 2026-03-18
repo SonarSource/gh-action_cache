@@ -215,11 +215,11 @@ branches in 30 days.
 
 ## Cache Cleanup
 
-Delete S3 cache entries for a specific branch and/or cache key prefix without waiting for the 30-day lifecycle expiry.
+List or delete S3 cache entries for your repository without waiting for the 30-day lifecycle expiry.
 
 ### Setup
 
-Add a cleanup workflow to your repository:
+Add a cleanup workflow to your repository (must be on the default branch):
 
 ```yaml
 # .github/workflows/cleanup-cache.yml
@@ -229,11 +229,12 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Branch name (e.g., 'feature/my-branch')"
-        required: true
+        description: "Branch name (e.g., 'feature/my-branch'). Leave empty to list all entries."
+        required: false
         type: string
+        default: ""
       key:
-        description: "Cache key prefix (optional). Leave empty to delete all cache for the branch."
+        description: "Cache key prefix (e.g., 'sccache-Linux-')"
         required: false
         type: string
         default: ""
@@ -241,7 +242,7 @@ on:
         description: "Preview deletions without executing them"
         required: false
         type: boolean
-        default: false
+        default: true
 
 jobs:
   cleanup:
@@ -257,14 +258,30 @@ jobs:
           dry-run: ${{ inputs.dry-run }}
 ```
 
-> **Important:** The workflow must be dispatched from a **default/protected branch** (e.g., `main` or `master`).
-> This is required by the IAM policy for cross-branch cache deletion.
+> **Important:** The cleanup workflow must be dispatched from a **default/protected branch** (e.g., `main` or `master`).
+> This is required by the IAM policy for cross-branch cache deletion permissions.
 
-### Running Cleanup
+### Modes of Operation
 
-**Via GitHub Actions UI:**
+| Scenario | Branch | Key | Dry-run |
+|----------|--------|-----|---------|
+| List all cache entries | _(empty)_ | _(empty)_ | n/a |
+| List entries matching a key | _(empty)_ | `sccache-Linux-` | n/a |
+| Preview what would be deleted | `feature/my-branch` | _(optional)_ | `true` |
+| Delete cache for a branch | `feature/my-branch` | _(optional)_ | `false` |
 
-1. Go to **Actions** > **Cleanup S3 Cache** > **Run workflow**
-2. Enter the branch name as you know it (e.g., `feature/my-branch` or `master`)
-3. Optionally enter a cache key prefix (e.g., `sccache-Linux-`)
-4. Optionally enable **dry-run** to preview what would be deleted
+### Running via GitHub CLI
+
+```bash
+# List all cache entries for your repo
+gh workflow run cleanup-cache.yml
+
+# Preview deletions for a branch
+gh workflow run cleanup-cache.yml -f branch="feature/my-branch" -f dry-run=true
+
+# Delete all cache for a branch
+gh workflow run cleanup-cache.yml -f branch="feature/my-branch" -f dry-run=false
+
+# Delete specific cache key on a branch
+gh workflow run cleanup-cache.yml -f branch="feature/my-branch" -f key="sccache-Linux-" -f dry-run=false
+```

@@ -2,77 +2,172 @@
 set -euo pipefail
 
 # Self-service S3 cache cleanup script.
-# Deletes cache objects matching a branch and optional key pattern.
 #
-# The branch name in S3 varies by event type:
+# Two modes of operation:
+#   LIST MODE  (no branch): Lists all cache entries for the repo, optionally filtered by key.
+#   DELETE MODE (branch provided): Deletes cache entries matching branch and optional key.
+#
+# The branch name in S3 varies by GitHub event type:
 #   - PR events use GITHUB_HEAD_REF (bare name, e.g., "feat/my-branch")
 #   - Push events use GITHUB_REF (full ref, e.g., "refs/heads/master")
-# This script searches for BOTH forms to cover all cached objects.
+# In delete mode, the script searches for BOTH forms to cover all cached objects.
 #
 # Required environment variables:
-#   - CLEANUP_BRANCH: Branch name (e.g., "feature/my-branch" or "refs/heads/feature/my-branch")
 #   - S3_BUCKET: S3 bucket name (e.g., "sonarsource-s3-cache-prod-bucket")
 #   - GITHUB_REPOSITORY: Repository in org/repo format
 #
 # Optional environment variables:
-#   - CLEANUP_KEY: Cache key prefix to match (e.g., "sccache-Linux-"). If empty, deletes all cache for the branch.
-#   - DRY_RUN: Set to "true" to preview deletions without executing them.
+#   - CLEANUP_BRANCH: Branch name. If empty, runs in list mode.
+#   - CLEANUP_KEY: Cache key prefix to filter (e.g., "sccache-Linux-").
+#   - DRY_RUN: Set to "true" to preview deletions without executing them (delete mode only).
 
-: "${CLEANUP_BRANCH:?}" "${S3_BUCKET:?}" "${GITHUB_REPOSITORY:?}"
+# Escape a string for use in grep regex
+escape_grep() {
+  local input="$1"
+  printf '%s' "$input" | sed 's/[.[\*^$()+?{|]/\\&/g'
+  return $?
+}
 
-# Derive both bare and full ref forms of the branch name
-INPUT_BRANCH="${CLEANUP_BRANCH}"
-if [[ "$INPUT_BRANCH" == refs/heads/* ]]; then
-  BARE_BRANCH="${INPUT_BRANCH#refs/heads/}"
-  FULL_REF_BRANCH="$INPUT_BRANCH"
-elif [[ "$INPUT_BRANCH" == refs/pull/* ]]; then
-  # PR ref - use as-is, no bare form
-  BARE_BRANCH="$INPUT_BRANCH"
-  FULL_REF_BRANCH="$INPUT_BRANCH"
-else
-  BARE_BRANCH="$INPUT_BRANCH"
-  FULL_REF_BRANCH="refs/heads/${INPUT_BRANCH}"
-fi
+: "${S3_BUCKET:?}" "${GITHUB_REPOSITORY:?}"
 
-S3_PREFIX="s3://${S3_BUCKET}/cache/${GITHUB_REPOSITORY}/"
+S3_PREFIX="cache/${GITHUB_REPOSITORY}/"
+INPUT_BRANCH="${CLEANUP_BRANCH:-}"
 KEY_PATTERN="${CLEANUP_KEY:-}"
-
-# Build include patterns for both bare (PR) and full ref (push) forms
-if [[ -n "$KEY_PATTERN" ]]; then
-  INCLUDE_BARE="*/${BARE_BRANCH}/${KEY_PATTERN}*"
-  INCLUDE_FULL="*/${FULL_REF_BRANCH}/${KEY_PATTERN}*"
-  echo "Deleting cache entries matching branch='${BARE_BRANCH}' key='${KEY_PATTERN}*'"
-else
-  INCLUDE_BARE="*/${BARE_BRANCH}/*"
-  INCLUDE_FULL="*/${FULL_REF_BRANCH}/*"
-  echo "Deleting ALL cache entries for branch='${BARE_BRANCH}'"
-fi
 
 echo "Repository: ${GITHUB_REPOSITORY}"
 echo "Bucket: ${S3_BUCKET}"
 
-CMD=(aws s3 rm "${S3_PREFIX}" --recursive --exclude "*" --include "${INCLUDE_BARE}" --include "${INCLUDE_FULL}")
-if [[ "${DRY_RUN:-false}" == "true" ]]; then
-  CMD+=(--dryrun)
-  echo ""
-  echo "=== DRY RUN MODE - no objects will be deleted ==="
-  echo ""
+# --- Phase 1: List matching objects ---
+
+ALL_KEYS=$(aws s3api list-objects-v2 \
+  --bucket "${S3_BUCKET}" \
+  --prefix "${S3_PREFIX}" \
+  --query "Contents[].Key" \
+  --output text 2>&1) || {
+  echo "ERROR: Failed to list S3 objects" >&2
+  echo "${ALL_KEYS}" >&2
+  exit 1
+}
+
+if [[ -z "$ALL_KEYS" || "$ALL_KEYS" == "None" ]]; then
+  echo "No cache entries found for ${GITHUB_REPOSITORY}."
+  exit 0
 fi
 
-EXIT_CODE=0
-OUTPUT=$("${CMD[@]}" 2>&1) || EXIT_CODE=$?
-echo "$OUTPUT"
+# Filter by branch and/or key pattern
+if [[ -n "$INPUT_BRANCH" ]]; then
+  # Derive both bare and full ref forms
+  if [[ "$INPUT_BRANCH" == refs/heads/* ]]; then
+    BARE_BRANCH="${INPUT_BRANCH#refs/heads/}"
+    FULL_REF_BRANCH="$INPUT_BRANCH"
+  elif [[ "$INPUT_BRANCH" == refs/pull/* ]]; then
+    BARE_BRANCH="$INPUT_BRANCH"
+    FULL_REF_BRANCH="$INPUT_BRANCH"
+  else
+    BARE_BRANCH="$INPUT_BRANCH"
+    FULL_REF_BRANCH="refs/heads/${INPUT_BRANCH}"
+  fi
 
-if [[ $EXIT_CODE -ne 0 ]]; then
-  echo "" >&2
-  echo "ERROR: aws s3 rm failed with exit code ${EXIT_CODE}" >&2
-  exit $EXIT_CODE
-fi
+  # Build grep pattern matching either branch form (escaped for grep -E)
+  BARE_ESCAPED=$(escape_grep "$BARE_BRANCH")
+  FULL_ESCAPED=$(escape_grep "$FULL_REF_BRANCH")
+  BRANCH_PATTERN="/${BARE_ESCAPED}/|/${FULL_ESCAPED}/"
 
-if [[ -z "$OUTPUT" ]]; then
-  echo "No matching cache entries found."
+  if [[ -n "$KEY_PATTERN" ]]; then
+    KEY_ESCAPED=$(escape_grep "$KEY_PATTERN")
+    MATCHED_KEYS=$(echo "$ALL_KEYS" | tr '\t' '\n' | grep -E "$BRANCH_PATTERN" | grep "$KEY_ESCAPED" || true)
+  else
+    MATCHED_KEYS=$(echo "$ALL_KEYS" | tr '\t' '\n' | grep -E "$BRANCH_PATTERN" || true)
+  fi
 else
-  MATCH_COUNT=$(echo "$OUTPUT" | grep -c "delete:" || true)
-  echo ""
-  echo "Cache cleanup completed. ${MATCH_COUNT} object(s) matched."
+  # List mode: no branch filter
+  if [[ -n "$KEY_PATTERN" ]]; then
+    KEY_ESCAPED=$(escape_grep "$KEY_PATTERN")
+    MATCHED_KEYS=$(echo "$ALL_KEYS" | tr '\t' '\n' | grep "$KEY_ESCAPED" || true)
+  else
+    MATCHED_KEYS=$(echo "$ALL_KEYS" | tr '\t' '\n')
+  fi
 fi
+
+if [[ -z "$MATCHED_KEYS" ]]; then
+  if [[ -n "$INPUT_BRANCH" ]]; then
+    echo "No cache entries found for branch '${BARE_BRANCH:-$INPUT_BRANCH}'."
+  else
+    echo "No cache entries found."
+  fi
+  exit 0
+fi
+
+MATCH_COUNT=$(echo "$MATCHED_KEYS" | wc -l | tr -d ' ')
+
+# --- List mode: display and exit ---
+
+if [[ -z "$INPUT_BRANCH" ]]; then
+  echo ""
+  echo "=== Cache entries for ${GITHUB_REPOSITORY} ==="
+  echo ""
+  echo "$MATCHED_KEYS" | sed "s|^${S3_PREFIX}||"
+  echo ""
+  echo "Total: ${MATCH_COUNT} object(s)"
+  exit 0
+fi
+
+# --- Phase 2: Delete matched objects ---
+
+echo ""
+if [[ -n "$KEY_PATTERN" ]]; then
+  echo "Matched ${MATCH_COUNT} object(s) for branch='${BARE_BRANCH:-$INPUT_BRANCH}' key='${KEY_PATTERN}'"
+else
+  echo "Matched ${MATCH_COUNT} object(s) for branch='${BARE_BRANCH:-$INPUT_BRANCH}'"
+fi
+
+if [[ "${DRY_RUN:-false}" == "true" ]]; then
+  echo ""
+  echo "=== DRY RUN - the following objects would be deleted ==="
+  echo ""
+  echo "$MATCHED_KEYS" | sed "s|^${S3_PREFIX}||"
+  echo ""
+  echo "Total: ${MATCH_COUNT} object(s) would be deleted"
+  exit 0
+fi
+
+# Batch delete (up to 1000 objects per API call)
+echo "Deleting ${MATCH_COUNT} object(s)..."
+
+BATCH_SIZE=1000
+KEYS_FILE=$(mktemp)
+echo "$MATCHED_KEYS" > "$KEYS_FILE"
+trap 'rm -f "$KEYS_FILE"' EXIT
+
+DELETED=0
+while true; do
+  BATCH=$(head -n "$BATCH_SIZE" "$KEYS_FILE")
+  if [[ -z "$BATCH" ]]; then
+    break
+  fi
+
+  DELETE_JSON=$(echo "$BATCH" | jq -R -s '
+    split("\n") | map(select(length > 0)) |
+    { Objects: map({ Key: . }), Quiet: true }
+  ')
+
+  aws s3api delete-objects \
+    --bucket "${S3_BUCKET}" \
+    --delete "$DELETE_JSON" > /dev/null || {
+    echo "ERROR: Failed to delete batch of objects" >&2
+    exit 1
+  }
+
+  BATCH_COUNT=$(echo "$BATCH" | wc -l | tr -d ' ')
+  DELETED=$((DELETED + BATCH_COUNT))
+  echo "  Deleted ${DELETED}/${MATCH_COUNT} objects..."
+
+  REMAINING=$(tail -n +"$((BATCH_SIZE + 1))" "$KEYS_FILE")
+  if [[ -z "$REMAINING" ]]; then
+    break
+  fi
+  echo "$REMAINING" > "$KEYS_FILE"
+done
+
+echo ""
+echo "Cache cleanup completed. ${DELETED} object(s) deleted."

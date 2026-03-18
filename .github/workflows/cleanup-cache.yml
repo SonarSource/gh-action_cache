@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Branch name to clean cache for (e.g., 'feature/my-branch')"
-        required: true
+        description: "Branch name (e.g., 'feature/my-branch'). Leave empty to list all cache entries."
+        required: false
         type: string
+        default: ""
       key:
-        description: "Cache key prefix to delete (e.g., 'sccache-Linux-'). Leave empty to delete all cache for the branch."
+        description: "Cache key prefix to filter (e.g., 'sccache-Linux-'). Works in both list and delete mode."
         required: false
         type: string
         default: ""

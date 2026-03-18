@@ -4,8 +4,8 @@ set -euo pipefail
 # Self-service S3 cache cleanup script.
 #
 # Two modes of operation:
-#   LIST MODE  (no branch): Lists all cache entries for the repo, optionally filtered by key.
-#   DELETE MODE (branch provided): Deletes cache entries matching branch and optional key.
+#   LIST MODE  (no branch or key): Lists all cache entries for the repo.
+#   DELETE MODE (branch and/or key provided): Deletes matching cache entries.
 #
 # The branch name in S3 varies by GitHub event type:
 #   - PR events use GITHUB_HEAD_REF (bare name, e.g., "feat/my-branch")
@@ -17,8 +17,9 @@ set -euo pipefail
 #   - GITHUB_REPOSITORY: Repository in org/repo format
 #
 # Optional environment variables:
-#   - CLEANUP_BRANCH: Branch name. If empty, runs in list mode.
+#   - CLEANUP_BRANCH: Branch name to filter by.
 #   - CLEANUP_KEY: Cache key prefix to filter (e.g., "sccache-Linux-").
+#   If both are empty, runs in list mode.
 #   - DRY_RUN: Set to "true" to preview deletions without executing them (delete mode only).
 
 # Escape a string for use in grep regex
@@ -43,16 +44,52 @@ format_size() {
   return 0
 }
 
-# Print a formatted table of S3 objects (size, date, key)
+# Extract object rows as TSV: size_bytes \t date \t key (shared by print_table and write_summary)
+extract_rows() {
+  local objects="$1"
+  echo "$objects" | jq -r --arg prefix "$S3_PREFIX" \
+    '[.Size, (.LastModified | split("T") | .[0]), (.Key | ltrimstr($prefix))] | @tsv'
+  return $?
+}
+
+# Print a formatted table of S3 objects (size, date, key) to stdout
 print_table() {
   local objects="$1"
   printf "%-8s  %-20s  %s\n" "SIZE" "LAST MODIFIED" "KEY"
   printf "%-8s  %-20s  %s\n" "--------" "--------------------" "---"
-  echo "$objects" | jq -r --arg prefix "$S3_PREFIX" \
-    '[.Size, (.LastModified | split("T") | .[0]), (.Key | ltrimstr($prefix))] | @tsv' | \
-    while IFS=$'\t' read -r size date key; do
-      printf "%-8s  %-20s  %s\n" "$(format_size "$size")" "$date" "$key"
+  extract_rows "$objects" | while IFS=$'\t' read -r size date key; do
+    printf "%-8s  %-20s  %s\n" "$(format_size "$size")" "$date" "$key"
+  done
+  return 0
+}
+
+# Write GitHub Actions job summary (markdown with collapsible object list)
+write_summary() {
+  local title="$1"
+  local objects="$2"
+  local count="$3"
+  local total_size="$4"
+
+  if [[ -z "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    return 0
+  fi
+
+  {
+    echo "### $title"
+    echo ""
+    echo "**${count} object(s)**, $(format_size "$total_size") total"
+    echo ""
+    echo "<details>"
+    echo "<summary>Show objects</summary>"
+    echo ""
+    echo "| Size | Last Modified | Key |"
+    echo "|------|--------------|-----|"
+    extract_rows "$objects" | while IFS=$'\t' read -r size date key; do
+      echo "| $(format_size "$size") | $date | $key |"
     done
+    echo ""
+    echo "</details>"
+  } >> "$GITHUB_STEP_SUMMARY"
   return 0
 }
 
@@ -135,25 +172,28 @@ MATCH_COUNT=$(echo "$MATCHED_OBJECTS" | wc -l | tr -d ' ')
 TOTAL_SIZE=$(echo "$MATCHED_OBJECTS" | jq -s '[.[].Size] | add // 0')
 MATCHED_KEYS=$(echo "$MATCHED_OBJECTS" | jq -r '.Key')
 
-# --- List mode: display with details and exit ---
+# --- List mode: display with details and exit (only when no branch AND no key) ---
 
-if [[ -z "$INPUT_BRANCH" ]]; then
+if [[ -z "$INPUT_BRANCH" && -z "$KEY_PATTERN" ]]; then
   echo ""
   echo "=== Cache entries for ${GITHUB_REPOSITORY} ==="
   echo ""
   print_table "$MATCHED_OBJECTS"
   echo ""
   echo "Total: ${MATCH_COUNT} object(s), $(format_size "$TOTAL_SIZE")"
+  write_summary "Cache entries for ${GITHUB_REPOSITORY}" "$MATCHED_OBJECTS" "$MATCH_COUNT" "$TOTAL_SIZE"
   exit 0
 fi
 
 # --- Phase 2: Delete matched objects ---
 
 echo ""
-if [[ -n "$KEY_PATTERN" ]]; then
+if [[ -n "$INPUT_BRANCH" && -n "$KEY_PATTERN" ]]; then
   echo "Matched ${MATCH_COUNT} object(s) for branch='${BARE_BRANCH:-$INPUT_BRANCH}' key='${KEY_PATTERN}' ($(format_size "$TOTAL_SIZE"))"
-else
+elif [[ -n "$INPUT_BRANCH" ]]; then
   echo "Matched ${MATCH_COUNT} object(s) for branch='${BARE_BRANCH:-$INPUT_BRANCH}' ($(format_size "$TOTAL_SIZE"))"
+else
+  echo "Matched ${MATCH_COUNT} object(s) for key='${KEY_PATTERN}' across all branches ($(format_size "$TOTAL_SIZE"))"
 fi
 
 if [[ "${DRY_RUN:-false}" == "true" ]]; then
@@ -163,6 +203,7 @@ if [[ "${DRY_RUN:-false}" == "true" ]]; then
   print_table "$MATCHED_OBJECTS"
   echo ""
   echo "Total: ${MATCH_COUNT} object(s) would be deleted ($(format_size "$TOTAL_SIZE"))"
+  write_summary "DRY RUN - objects that would be deleted" "$MATCHED_OBJECTS" "$MATCH_COUNT" "$TOTAL_SIZE"
   exit 0
 fi
 
@@ -206,3 +247,4 @@ done
 
 echo ""
 echo "Cache cleanup completed. ${DELETED} object(s) deleted ($(format_size "$TOTAL_SIZE"))."
+write_summary "Deleted cache entries" "$MATCHED_OBJECTS" "$DELETED" "$TOTAL_SIZE"

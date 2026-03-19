@@ -23,14 +23,15 @@ describe('credential-guard-main', () => {
   });
 
   it('saves credentials file path to GITHUB_STATE', async () => {
-    vi.mocked(core.getInput).mockReturnValue('/tmp/creds/credentials.json');
+    const credsPath = path.join(os.tmpdir(), 'creds', 'credentials.json');
+    vi.mocked(core.getInput).mockReturnValue(credsPath);
 
     const { run } = await import('../src/credential-guard-main');
     await run();
 
     expect(core.saveState).toHaveBeenCalledWith(
       'credentials-file',
-      '/tmp/creds/credentials.json'
+      credsPath
     );
   });
 

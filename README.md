@@ -246,7 +246,7 @@ on:
 
 jobs:
   cleanup:
-    runs-on: github-ubuntu-latest-s
+    runs-on: sonar-xs
     permissions:
       id-token: write
       contents: read
@@ -268,6 +268,7 @@ jobs:
 | List all cache entries | _(empty)_ | _(empty)_ | n/a |
 | Preview what would be deleted | `feature/my-branch` | _(optional)_ | `true` |
 | Delete cache for a branch | `feature/my-branch` | _(optional)_ | `false` |
+| Delete key for given branch | `feature/my-branch`  | `sccache-Linux-` | `false` |
 | Delete key across all branches | _(empty)_ | `sccache-Linux-` | `false` |
 
 ### Running via GitHub CLI

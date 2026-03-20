@@ -34,7 +34,7 @@ inputs:
     description: >
       When enabled, automatically adds a fallback restore key pointing to the default branch cache.
       Only applies to the S3 backend.
-    default: 'true'
+    default: 'false'
   backend:
     description: >
       Force cache backend ('github' or 's3'). If not set, falls back to the CACHE_BACKEND environment variable if defined,

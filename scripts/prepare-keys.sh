@@ -42,19 +42,6 @@ echo "branch-key=${BRANCH_KEY}" >> "$GITHUB_OUTPUT"
 
 RESTORE_KEYS=""
 
-# Process restore keys: add branch-specific keys
-if [[ -n $INPUT_RESTORE_KEYS ]]; then
-  while IFS= read -r line; do
-    if [ -n "$line" ]; then
-      if [ -n "$RESTORE_KEYS" ]; then
-        RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"${BRANCH_NAME}/${line}"
-      else
-        RESTORE_KEYS="${BRANCH_NAME}/${line}"
-      fi
-    fi
-  done <<< "$INPUT_RESTORE_KEYS"
-fi
-
 # Determine the fallback branch
 if [[ -n "$INPUT_FALLBACK_BRANCH" ]]; then
   # Explicit fallback-branch is always honoured, regardless of fallback-to-default-branch
@@ -66,23 +53,21 @@ elif [[ $INPUT_FALLBACK_TO_DEFAULT_BRANCH == "true" ]]; then
     jq -r '.default_branch')
 fi
 
+# Build restore keys in priority order:
+#   1. Fallback branch exact match (primary key re-scoped to fallback branch)
+#   2. Branch-specific prefix matches (user's restore-keys scoped to current branch)
+#   3. Fallback branch prefix matches (user's restore-keys re-scoped to fallback branch)
+
+FALLBACK_EXACT_KEY=""
+FALLBACK_ACTIVE=false
+
 if [[ -n "${FALLBACK_BRANCH:-}" && "$FALLBACK_BRANCH" != "null" ]]; then
-  # Skip fallback if we're already on the fallback branch
   CURRENT_BRANCH="${BRANCH_NAME#refs/heads/}"
   if [[ "$CURRENT_BRANCH" != "$FALLBACK_BRANCH" ]]; then
     case "$FALLBACK_BRANCH" in
       main|master|branch-*)
-        if [[ -n $INPUT_RESTORE_KEYS ]]; then
-          # Add fallback branch restore keys for each user-provided restore key
-          while IFS= read -r line; do
-            if [[ -n "$line" ]]; then
-              RESTORE_KEYS="${RESTORE_KEYS}"$'\n'"refs/heads/${FALLBACK_BRANCH}/${line}"
-            fi
-          done <<< "$INPUT_RESTORE_KEYS"
-        else
-          # No restore keys provided: add exact-match fallback using the primary key
-          RESTORE_KEYS="refs/heads/${FALLBACK_BRANCH}/${INPUT_KEY}"
-        fi
+        FALLBACK_ACTIVE=true
+        FALLBACK_EXACT_KEY="refs/heads/${FALLBACK_BRANCH}/${INPUT_KEY}"
         ;;
       *)
         echo "::warning::Fallback branch '$FALLBACK_BRANCH' is not supported for cache fallback. Supported branches: main, master, branch-*"
@@ -91,6 +76,32 @@ if [[ -n "${FALLBACK_BRANCH:-}" && "$FALLBACK_BRANCH" != "null" ]]; then
   fi
 elif [[ -n "$INPUT_FALLBACK_BRANCH" || $INPUT_FALLBACK_TO_DEFAULT_BRANCH == "true" ]]; then
   echo "::warning::Unable to determine fallback branch; skipping fallback restore keys."
+fi
+
+# Add fallback exact-match key first (highest priority restore key)
+if [[ -n "$FALLBACK_EXACT_KEY" ]]; then
+  RESTORE_KEYS="$FALLBACK_EXACT_KEY"
+fi
+
+# Helper: append a prefixed restore key for each user-provided restore-key line
+append_restore_keys() {
+  local prefix="$1"
+  while IFS= read -r line; do
+    if [[ -n "$line" ]]; then
+      RESTORE_KEYS="${RESTORE_KEYS:+${RESTORE_KEYS}$'\n'}${prefix}/${line}"
+    fi
+  done <<< "$INPUT_RESTORE_KEYS"
+  return 0
+}
+
+# Add branch-specific restore keys (prefix match)
+if [[ -n $INPUT_RESTORE_KEYS ]]; then
+  append_restore_keys "$BRANCH_NAME"
+fi
+
+# Add fallback branch restore keys (prefix match, lowest priority)
+if [[ $FALLBACK_ACTIVE == true && -n $INPUT_RESTORE_KEYS ]]; then
+  append_restore_keys "refs/heads/${FALLBACK_BRANCH}"
 fi
 
 if [[ -n "$RESTORE_KEYS" ]]; then

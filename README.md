@@ -45,7 +45,8 @@ npm run build:guard-main  # build credential-guard main only
 npm run build:guard-post  # build credential-guard post only
 ```
 
-Bundled output goes to `credential-setup/dist/` and `credential-guard/dist/`. These must be committed since GitHub Actions runs them directly.
+Bundled output goes to `credential-setup/dist/` and `credential-guard/dist/`.
+These must be committed since GitHub Actions runs them directly.
 
 ## Usage
 
@@ -66,7 +67,7 @@ Bundled output goes to `credential-setup/dist/` and `credential-guard/dist/`. Th
 | `path`                 | Files, directories, and wildcard patterns to cache                                                                                               | Yes      |         |
 | `key`                  | Explicit key for restoring and saving cache                                                                                                      | Yes      |         |
 | `restore-keys`                  | Ordered list of prefix-matched keys for fallback                                                                                                 | No       |         |
-| `fallback-to-default-branch`    | Automatically add a fallback restore key pointing to the default branch cache (S3 backend only). Disable if you want strict branch isolation.    | No       | `true`  |
+| `fallback-to-default-branch`    | Automatically add a fallback restore key pointing to the default branch cache (S3 backend only). Disable if you want strict branch isolation.    | No       | `false`  |
 | `fallback-branch`               | Optional maintenance branch for fallback restore keys (pattern: `branch-*`, S3 backend only). If not set, the repository default branch is used. | No       |         |
 | `environment`                   | Environment to use (dev or prod, S3 backend only)                                                                                                | No       | `prod`  |
 | `upload-chunk-size`             | Chunk size for large file uploads (bytes)                                                                                                        | No       |         |
@@ -119,11 +120,11 @@ A GitHub Action that provides branch-specific caching on AWS S3 with intelligent
 
 The action searches for cache entries in this order:
 
-1. **Primary key**: `${BRANCH_NAME}/${key}`
-2. **Branch-specific restore keys**: `${BRANCH_NAME}/${restore-key}` (for each restore key provided)
-3. **Default branch fallbacks** (when `fallback-to-default-branch: true`, the default):
-    - If `restore-keys` are provided: `refs/heads/${DEFAULT_BRANCH}/${restore-key}` for each restore key
-    - If no `restore-keys` are provided: `refs/heads/${DEFAULT_BRANCH}/${key}` (exact-match fallback)
+1. **Primary key**: `${BRANCH_NAME}/${key}` (exact match)
+2. **Default branch exact-match fallback** (when `fallback-to-default-branch: true`): `refs/heads/${DEFAULT_BRANCH}/${key}`
+3. **Branch-specific restore keys** (if `restore-keys` provided): `${BRANCH_NAME}/${restore-key}` for each restore key (prefix match)
+4. **Default branch restore key fallbacks** (if `restore-keys` provided):
+    `refs/heads/${DEFAULT_BRANCH}/${restore-key}` for each restore key (prefix match, lowest priority)
 
 #### Example — with restore-keys
 
@@ -138,8 +139,9 @@ The action searches for cache entries in this order:
 For a feature branch `feature/new-ui`, this will search for:
 
 1. `feature/new-ui/node-linux-abc123...` (exact match)
-2. `feature/new-ui/node-linux-` (branch-specific partial match)
-3. `refs/heads/main/node-linux-` (default branch fallback, assuming `main` is the repository's default branch)
+2. `refs/heads/main/node-linux-abc123...` (default branch fallback, exact match)
+3. `feature/new-ui/node-linux-` (branch-specific prefix match)
+4. `refs/heads/main/node-linux-` (default branch fallback, prefix match)
 
 #### Example — without restore-keys
 
@@ -167,7 +169,8 @@ To disable the automatic default branch fallback:
 
 #### Key Differences from Standard Cache Action
 
-- **Automatic default branch fallback**: By default, feature branches fall back to the default branch cache when no branch-specific entry exists
+- **Automatic default branch fallback**: By default, feature branches fall back to the default branch cache
+  when no branch-specific entry exists
 - **Dynamic default branch detection**: The action detects your default branch using the GitHub API and uses it for fallback
 - **Branch isolation**: Each branch maintains its own cache namespace, preventing cross-branch cache pollution
 

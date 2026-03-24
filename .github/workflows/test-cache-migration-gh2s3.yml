@@ -45,6 +45,7 @@ jobs:
         with:
           path: ~/.cache/test-migration
           key: test-migration-s3hit
+          import-github-cache: 'false'
           environment: dev
           backend: s3
 

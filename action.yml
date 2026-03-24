@@ -61,10 +61,13 @@ runs:
         REPO_VISIBILITY: ${{ github.event.repository.visibility }}
         FORCED_BACKEND: ${{ inputs.backend }}
       run: |
+        BACKEND_SOURCE="auto"
         if [[ "$FORCED_BACKEND" == "github" || "$FORCED_BACKEND" == "s3" ]]; then
           CACHE_BACKEND="$FORCED_BACKEND"
+          BACKEND_SOURCE="forced"
           echo "Using forced backend from input: $CACHE_BACKEND"
         elif [[ "$CACHE_BACKEND" == "github" || "$CACHE_BACKEND" == "s3" ]]; then
+          BACKEND_SOURCE="forced"
           echo "Using backend from CACHE_BACKEND environment variable: $CACHE_BACKEND"
         else
           # If visibility is not available in the event, try to get it from the API
@@ -85,6 +88,7 @@ runs:
         fi
 
         echo "cache-backend=$CACHE_BACKEND" >> "$GITHUB_OUTPUT"
+        echo "backend-source=$BACKEND_SOURCE" >> "$GITHUB_OUTPUT"
 
     - name: Cache with GitHub Actions (public repos)
       if: steps.cache-backend.outputs.cache-backend == 'github'
@@ -132,17 +136,21 @@ runs:
       shell: bash
       env:
         INPUT_IMPORT_GITHUB_CACHE: ${{ inputs.import-github-cache }}
+        BACKEND_SOURCE: ${{ steps.cache-backend.outputs.backend-source }}
       run: |
-        # Resolution order: input → CACHE_IMPORT_GITHUB env var → default true
+        # Resolution order: input → CACHE_IMPORT_GITHUB env var → true if backend was explicitly forced (migration scenario) → false
         if [[ -n "$INPUT_IMPORT_GITHUB_CACHE" ]]; then
           IMPORT_GITHUB="$INPUT_IMPORT_GITHUB_CACHE"
           echo "Using import mode from input: $IMPORT_GITHUB"
         elif [[ -n "${CACHE_IMPORT_GITHUB:-}" ]]; then
           IMPORT_GITHUB="$CACHE_IMPORT_GITHUB"
           echo "Using import mode from CACHE_IMPORT_GITHUB environment variable: $IMPORT_GITHUB"
-        else
+        elif [[ "$BACKEND_SOURCE" == "forced" ]]; then
           IMPORT_GITHUB="true"
-          echo "Using default import mode: $IMPORT_GITHUB"
+          echo "Using default import mode (backend explicitly forced to S3 — migration scenario): $IMPORT_GITHUB"
+        else
+          IMPORT_GITHUB="false"
+          echo "Using default import mode (backend auto-detected — no prior GitHub cache): $IMPORT_GITHUB"
         fi
         echo "import-github=$IMPORT_GITHUB" >> "$GITHUB_OUTPUT"
 

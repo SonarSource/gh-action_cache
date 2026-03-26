@@ -1,12 +1,12 @@
 # `gh-action_cache`
 
-Adaptive cache action that automatically chooses the appropriate caching backend based on repository visibility and ownership.
+Adaptive cache action that uses SonarSource S3 cache for all repositories, with seamless compatibility with the standard GitHub Actions
+cache interface.
 
-- Automatically uses GitHub Actions cache for public repositories
-- Uses SonarSource S3 cache for private/internal SonarSource repositories
+- Uses SonarSource S3 cache for all repositories (public, private, and internal)
 - Seamless API compatibility with standard GitHub Actions cache
 - Supports all standard cache inputs and outputs
-- Automatic repository visibility detection
+- Automatic migration from GitHub Actions cache to S3 (no cold starts)
 
 ## Requirements
 
@@ -69,20 +69,20 @@ These must be committed since GitHub Actions runs them directly.
 
 ## Inputs
 
-| Input                        | Description                                                                                                                                      | Required | Default                                                                      |
-|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|----------|------------------------------------------------------------------------------|
-| `path`                       | Files, directories, and wildcard patterns to cache                                                                                               | Yes      |                                                                              |
-| `key`                        | Explicit key for restoring and saving cache                                                                                                      | Yes      |                                                                              |
-| `restore-keys`               | Ordered list of prefix-matched keys for fallback                                                                                                 | No       |                                                                              |
-| `fallback-to-default-branch` | Automatically add a fallback restore key pointing to the default branch cache (S3 backend only). Disable if you want strict branch isolation.    | No       | `true`                                                                      |
-| `fallback-branch`            | Optional maintenance branch for fallback restore keys (pattern: `branch-*`, S3 backend only). If not set, the repository default branch is used. | No       |                                                                              |
-| `environment`                | Environment to use (dev or prod, S3 backend only)                                                                                                | No       | `prod`                                                                       |
-| `upload-chunk-size`          | Chunk size for large file uploads (bytes)                                                                                                        | No       |                                                                              |
-| `enableCrossOsArchive`       | Enable cross-OS cache compatibility                                                                                                              | No       | `false`                                                                      |
-| `fail-on-cache-miss`         | Fail workflow if cache entry not found                                                                                                           | No       | `false`                                                                      |
-| `lookup-only`                | Only check cache existence without downloading                                                                                                   | No       | `false`                                                                      |
-| `backend`                    | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |                                                                              |
-| `import-github-cache`        | Import GitHub cache to S3 when no S3 cache exists (migration mode, S3 backend only). Takes priority over `CACHE_IMPORT_GITHUB` env var.          | No       | `true` when backend is explicitly forced to `s3`, `false` when auto-detected |
+| Input                        | Description                                                                                                                                      | Required | Default                                                                                                  |
+|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|----------|----------------------------------------------------------------------------------------------------------|
+| `path`                       | Files, directories, and wildcard patterns to cache                                                                                               | Yes      |                                                                                                          |
+| `key`                        | Explicit key for restoring and saving cache                                                                                                      | Yes      |                                                                                                          |
+| `restore-keys`               | Ordered list of prefix-matched keys for fallback                                                                                                 | No       |                                                                                                          |
+| `fallback-to-default-branch` | Automatically add a fallback restore key pointing to the default branch cache (S3 backend only). Disable if you want strict branch isolation.    | No       | `true`                                                                                                   |
+| `fallback-branch`            | Optional maintenance branch for fallback restore keys (pattern: `branch-*`, S3 backend only). If not set, the repository default branch is used. | No       |                                                                                                          |
+| `environment`                | Environment to use (dev or prod, S3 backend only)                                                                                                | No       | `prod`                                                                                                   |
+| `upload-chunk-size`          | Chunk size for large file uploads (bytes)                                                                                                        | No       |                                                                                                          |
+| `enableCrossOsArchive`       | Enable cross-OS cache compatibility                                                                                                              | No       | `false`                                                                                                  |
+| `fail-on-cache-miss`         | Fail workflow if cache entry not found                                                                                                           | No       | `false`                                                                                                  |
+| `lookup-only`                | Only check cache existence without downloading                                                                                                   | No       | `false`                                                                                                  |
+| `backend`                    | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |                                                                                                          |
+| `import-github-cache`        | Import GitHub cache to S3 when no S3 cache exists (migration mode, S3 backend only). Takes priority over `CACHE_IMPORT_GITHUB` env var.          | No       | `true` when backend is explicitly forced to `s3` or for public repos; `false` for private/internal repos |
 
 ## Backend Selection
 
@@ -90,7 +90,7 @@ The cache backend is determined in the following priority order:
 
 1. **`inputs.backend`** — explicit input in the action step (`github` or `s3`)
 2. **`CACHE_BACKEND` environment variable** — set at the job or workflow level (`github` or `s3`)
-3. **Repository visibility** — `github` for public repos, `s3` for private/internal repos
+3. **Default** — `s3` for all repositories (public, private, and internal)
 
 The `CACHE_BACKEND` env var is useful when the cache action is called indirectly through a composite action, and you cannot set the
 `backend` input directly, or when you want to enforce the same backend for all cache steps in a workflow without modifying each step:
@@ -107,9 +107,14 @@ Migration mode bridges this gap: when using the S3 backend and no S3 cache exist
 from GitHub Actions cache using the original key. The S3 post-job step then saves the restored content to S3, pre-provisioning it
 for subsequent runs.
 
-Migration mode is **enabled by default when the S3 backend is explicitly forced** (`backend: s3` input or `CACHE_BACKEND=s3` env var),
-which is the typical migration scenario. It is disabled by default when the S3 backend is auto-detected (private/internal repository),
-since those repositories have always used S3 and have no GitHub cache entries to migrate.
+Migration mode is **enabled by default** in two cases:
+
+- **Backend explicitly forced to S3** (`backend: s3` input or `CACHE_BACKEND=s3` env var) — the typical opt-in migration scenario.
+- **Public repository with auto-detected backend** — public repositories previously used GitHub Actions cache by default; migration
+  is enabled automatically so their first run after the upgrade remains a warm cache hit.
+
+It is **disabled by default** for private/internal repositories with auto-detected backend, since those repositories have always
+used S3 and have no GitHub cache entries to migrate.
 
 Once all relevant entries have been migrated to S3, disable it to avoid the overhead of the GitHub fallback attempt on every cache miss.
 
@@ -117,8 +122,9 @@ Once all relevant entries have been migrated to S3, disable it to avoid the over
 
 1. **`import-github-cache: 'false'`** — action input in the step
 2. **`CACHE_IMPORT_GITHUB=false`** — environment variable at job or workflow level (can be sourced from a repository variable)
-3. **`true`** if backend was explicitly forced to `s3` (migration scenario)
-4. **`false`** if backend was auto-detected (no prior GitHub cache)
+3. **`true`** if backend was explicitly forced to `s3` (opt-in migration scenario)
+4. **`true`** if backend was auto-detected and repository is **public** (previously used GitHub cache by default)
+5. **`false`** if backend was auto-detected and repository is **private/internal** (always used S3, no GitHub cache to migrate)
 
 **Disabling via repository variable** (recommended for gradual rollout):
 

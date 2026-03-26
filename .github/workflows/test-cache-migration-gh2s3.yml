@@ -146,3 +146,29 @@ jobs:
         run: |
           [[ "${{ steps.cache.outputs.cache-hit }}" == "true" ]] || { echo "ERROR: expected S3 hit"; exit 1; }
           [[ "$(cat ~/.cache/test-migration/test-file.txt)" == "s3-content" ]] || { echo "ERROR: unexpected content — GitHub import may have overridden S3"; exit 1; }
+
+  # Scenario 5: auto-detected S3 (public repo) — GitHub import MUST be triggered via was-github-default=true
+  # Verifies the new code path: public repos switching from GitHub default get migration enabled automatically,
+  # without needing to force the backend explicitly (distinct from the BACKEND_SOURCE=forced path in scenario 1).
+  test-auto-public-import-enabled:
+    needs: provision-github-cache
+    runs-on: github-ubuntu-latest-s
+    name: "Auto-detected S3 (public repo) → GitHub import enabled"
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Cache (auto-detected backend, no backend input or CACHE_BACKEND env)
+        id: cache
+        uses: ./
+        with:
+          path: ~/.cache/test-migration
+          key: test-migration-gh
+          environment: dev
+          # No backend input — public repo auto-detects S3 with was-github-default=true → import enabled
+      - name: Verify import succeeded via was-github-default path
+        run: |
+          [[ "${{ steps.cache.outputs.cache-hit }}" == "true" ]] || { echo "ERROR: cache-hit is not true — GitHub cache was not imported for a public repo"; exit 1; }
+          [[ "$(cat ~/.cache/test-migration/test-file.txt)" == "github-content" ]] || { echo "ERROR: unexpected content, not restored from GitHub"; exit 1; }
+          rm -rf ~/.cache/test-migration  # prevent saving to S3 so other scenarios don't find it

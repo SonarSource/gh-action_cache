@@ -62,6 +62,7 @@ runs:
         FORCED_BACKEND: ${{ inputs.backend }}
       run: |
         BACKEND_SOURCE="auto"
+        WAS_GITHUB_DEFAULT="false"
         if [[ "$FORCED_BACKEND" == "github" || "$FORCED_BACKEND" == "s3" ]]; then
           CACHE_BACKEND="$FORCED_BACKEND"
           BACKEND_SOURCE="forced"
@@ -78,17 +79,18 @@ runs:
           fi
           echo "Repository visibility: $REPO_VISIBILITY"
 
+          CACHE_BACKEND="s3"
           if [[ "$REPO_VISIBILITY" == "public" ]]; then
-            CACHE_BACKEND="github"
-            echo "Using GitHub cache for public repository"
+            WAS_GITHUB_DEFAULT="true"
+            echo "Using S3 cache for public repository (previously GitHub default — migration eligible)"
           else
-            CACHE_BACKEND="s3"
             echo "Using S3 cache for private/internal repository"
           fi
         fi
 
         echo "cache-backend=$CACHE_BACKEND" >> "$GITHUB_OUTPUT"
         echo "backend-source=$BACKEND_SOURCE" >> "$GITHUB_OUTPUT"
+        echo "was-github-default=$WAS_GITHUB_DEFAULT" >> "$GITHUB_OUTPUT"
 
     - name: Cache with GitHub Actions (public repos)
       if: steps.cache-backend.outputs.cache-backend == 'github'
@@ -137,8 +139,10 @@ runs:
       env:
         INPUT_IMPORT_GITHUB_CACHE: ${{ inputs.import-github-cache }}
         BACKEND_SOURCE: ${{ steps.cache-backend.outputs.backend-source }}
+        WAS_GITHUB_DEFAULT: ${{ steps.cache-backend.outputs.was-github-default }}
       run: |
-        # Resolution order: input → CACHE_IMPORT_GITHUB env var → true if backend was explicitly forced (migration scenario) → false
+        # Resolution order: input → CACHE_IMPORT_GITHUB env var → true if backend was explicitly forced (migration scenario)
+        #                 → true if public repo switching from GitHub default → false (private/internal, already on S3)
         if [[ -n "$INPUT_IMPORT_GITHUB_CACHE" ]]; then
           IMPORT_GITHUB="$INPUT_IMPORT_GITHUB_CACHE"
           echo "Using import mode from input: $IMPORT_GITHUB"
@@ -148,9 +152,12 @@ runs:
         elif [[ "$BACKEND_SOURCE" == "forced" ]]; then
           IMPORT_GITHUB="true"
           echo "Using default import mode (backend explicitly forced to S3 — migration scenario): $IMPORT_GITHUB"
+        elif [[ "$WAS_GITHUB_DEFAULT" == "true" ]]; then
+          IMPORT_GITHUB="true"
+          echo "Using default import mode (public repository — previously used GitHub cache by default): $IMPORT_GITHUB"
         else
           IMPORT_GITHUB="false"
-          echo "Using default import mode (backend auto-detected — no prior GitHub cache): $IMPORT_GITHUB"
+          echo "Using default import mode (private/internal repository — already on S3): $IMPORT_GITHUB"
         fi
         echo "import-github=$IMPORT_GITHUB" >> "$GITHUB_OUTPUT"
 

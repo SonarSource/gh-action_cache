@@ -184,7 +184,7 @@ jobs:
       - test-s3-import-disabled-via-env
       - test-s3-hit-skips-github-import
       - test-auto-public-import-enabled
-    runs-on: ubuntu-latest
+    runs-on: github-ubuntu-latest-s
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # v1.2.2

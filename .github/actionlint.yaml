@@ -1,4 +1,6 @@
 ---
 self-hosted-runner:
   labels:
-    - ubuntu-24.04-large
+    - sonar-xs
+    - github-ubuntu-latest-s
+    - github-windows-latest-s

@@ -15,7 +15,7 @@ on:
 
 jobs:
   check-migration:
-    runs-on: ubuntu-latest
+    runs-on: github-ubuntu-latest-s
     name: Compare GitHub cache vs S3
     permissions:
       id-token: write

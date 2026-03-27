@@ -172,3 +172,21 @@ jobs:
           [[ "${{ steps.cache.outputs.cache-hit }}" == "true" ]] || { echo "ERROR: cache-hit is not true — GitHub cache was not imported for a public repo"; exit 1; }
           [[ "$(cat ~/.cache/test-migration/test-file.txt)" == "github-content" ]] || { echo "ERROR: unexpected content, not restored from GitHub"; exit 1; }
           rm -rf ~/.cache/test-migration  # prevent saving to S3 so other scenarios don't find it
+
+  all-green:
+    name: All Tests - Cache Migration
+    if: always()
+    needs:
+      - provision-github-cache
+      - provision-s3-cache
+      - test-s3-import-enabled
+      - test-s3-import-disabled
+      - test-s3-import-disabled-via-env
+      - test-s3-hit-skips-github-import
+      - test-auto-public-import-enabled
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide whether the needed jobs succeeded or failed
+        uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # v1.2.2
+        with:
+          jobs: ${{ toJSON(needs) }}

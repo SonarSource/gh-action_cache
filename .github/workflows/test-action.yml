@@ -328,3 +328,22 @@ jobs:
           pip install pytest requests
 
       # SUCCESS: credential-guard post step runs, then runs-on/cache saves to S3
+
+  all-green:
+    name: All Tests
+    if: always()
+    needs:
+      - test-github-cache
+      - test-s3-cache
+      - test-s3-cache-with-fallback
+      - test-s3-cache-with-credential-interference
+      - test-s3-cache-windows
+      - test-s3-cache-multiple-invocations
+      - test-s3-cache-with-preset-aws-config
+      - test-s3-cache-survives-git-clean
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide whether the needed jobs succeeded or failed
+        uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # v1.2.2
+        with:
+          jobs: ${{ toJSON(needs) }}

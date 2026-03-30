@@ -19,7 +19,8 @@ export async function retryWithBackoff<T>(
       if (attempt === maxAttempts) {
         throw error;
       }
-      const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+      const jitter = 0.5 + Math.random() * 0.5;
+      const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt - 1) * jitter);
       const message = error instanceof Error ? error.message : String(error);
       core.warning(
         `${label} failed (attempt ${attempt}/${maxAttempts}): ${message}. Retrying in ${delayMs}ms...`

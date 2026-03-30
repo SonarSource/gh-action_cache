@@ -43995,28 +43995,30 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getCognitoCredentials = getCognitoCredentials;
 const core = __importStar(__nccwpck_require__(7484));
 const client_cognito_identity_1 = __nccwpck_require__(6473);
+const retry_1 = __nccwpck_require__(9809);
 const IDENTITY_PROVIDER = 'token.actions.githubusercontent.com';
 const AUDIENCE = 'cognito-identity.amazonaws.com';
 async function getCognitoCredentials(config) {
+    const retryOpts = { maxAttempts: 3, baseDelayMs: 1000, ...config.retryOptions };
     core.info('Requesting GitHub OIDC token...');
-    const oidcToken = await core.getIDToken(AUDIENCE);
+    const oidcToken = await (0, retry_1.retryWithBackoff)(() => core.getIDToken(AUDIENCE), { label: 'GitHub OIDC token', ...retryOpts });
     core.setSecret(oidcToken);
     const client = new client_cognito_identity_1.CognitoIdentityClient({ region: config.region });
     const logins = { [IDENTITY_PROVIDER]: oidcToken };
     core.info('Exchanging OIDC token for Cognito identity...');
-    const { IdentityId } = await client.send(new client_cognito_identity_1.GetIdCommand({
+    const { IdentityId } = await (0, retry_1.retryWithBackoff)(() => client.send(new client_cognito_identity_1.GetIdCommand({
         IdentityPoolId: config.poolId,
         AccountId: config.accountId,
         Logins: logins,
-    }));
+    })), { label: 'Cognito GetId', ...retryOpts });
     if (!IdentityId) {
         throw new Error('Failed to obtain Identity ID from Cognito Identity Pool');
     }
     core.info('Obtaining AWS credentials from Cognito...');
-    const { Credentials } = await client.send(new client_cognito_identity_1.GetCredentialsForIdentityCommand({
+    const { Credentials } = await (0, retry_1.retryWithBackoff)(() => client.send(new client_cognito_identity_1.GetCredentialsForIdentityCommand({
         IdentityId,
         Logins: logins,
-    }));
+    })), { label: 'Cognito GetCredentials', ...retryOpts });
     if (!Credentials?.AccessKeyId || !Credentials?.SecretKey || !Credentials?.SessionToken) {
         throw new Error('Failed to obtain AWS credentials from Cognito');
     }
@@ -44131,6 +44133,70 @@ async function run() {
 /* istanbul ignore next */
 if (!process.env.VITEST) {
     run();
+}
+
+
+/***/ }),
+
+/***/ 9809:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.retryWithBackoff = retryWithBackoff;
+const core = __importStar(__nccwpck_require__(7484));
+async function retryWithBackoff(fn, options) {
+    const { label, maxAttempts = 3, baseDelayMs = 1000 } = options;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await fn();
+        }
+        catch (error) {
+            if (attempt === maxAttempts) {
+                throw error;
+            }
+            const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+            const message = error instanceof Error ? error.message : String(error);
+            core.warning(`${label} failed (attempt ${attempt}/${maxAttempts}): ${message}. Retrying in ${delayMs}ms...`);
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
+    // Unreachable, but satisfies TypeScript
+    throw new Error(`${label} failed after ${maxAttempts} attempts`);
 }
 
 

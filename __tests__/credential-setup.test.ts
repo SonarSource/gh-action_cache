@@ -3,6 +3,15 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 
+vi.mock('../src/retry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/retry')>();
+  return {
+    ...actual,
+    retryWithBackoff: (fn: () => Promise<unknown>, opts: Record<string, unknown>) =>
+      actual.retryWithBackoff(fn, { ...opts, baseDelayMs: 1 }),
+  };
+});
+
 vi.mock('@actions/core', () => ({
   getInput: vi.fn(),
   setOutput: vi.fn(),

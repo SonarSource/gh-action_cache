@@ -1,5 +1,9 @@
 import * as core from '@actions/core';
 
+export const DEFAULT_MAX_ATTEMPTS = 3;
+export const DEFAULT_BASE_DELAY_MS = 1000;
+const JITTER_MIN = 0.5;
+
 export interface RetryOptions {
   label: string;
   maxAttempts?: number;
@@ -10,7 +14,7 @@ export async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   options: RetryOptions
 ): Promise<T> {
-  const { label, maxAttempts = 3, baseDelayMs = 1000 } = options;
+  const { label, maxAttempts = DEFAULT_MAX_ATTEMPTS, baseDelayMs = DEFAULT_BASE_DELAY_MS } = options;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -19,7 +23,7 @@ export async function retryWithBackoff<T>(
       if (attempt === maxAttempts) {
         throw error;
       }
-      const jitter = 0.5 + Math.random() * 0.5;
+      const jitter = JITTER_MIN + Math.random() * (1 - JITTER_MIN);
       const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt - 1) * jitter);
       const message = error instanceof Error ? error.message : String(error);
       core.warning(

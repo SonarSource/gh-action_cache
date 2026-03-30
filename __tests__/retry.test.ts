@@ -5,7 +5,9 @@ vi.mock('@actions/core', () => ({
 }));
 
 import * as core from '@actions/core';
-import { retryWithBackoff } from '../src/retry';
+import { retryWithBackoff, DEFAULT_BASE_DELAY_MS, DEFAULT_MAX_ATTEMPTS } from '../src/retry';
+
+const TIMER_MARGIN_MS = 100;
 
 describe('retryWithBackoff', () => {
   beforeEach(() => {
@@ -31,14 +33,13 @@ describe('retryWithBackoff', () => {
       .mockResolvedValueOnce('recovered');
 
     const promise = retryWithBackoff(fn, { label: 'test-op' });
-    // Advance past first retry delay (1000ms base)
-    await vi.advanceTimersByTimeAsync(1100);
+    await vi.advanceTimersByTimeAsync(DEFAULT_BASE_DELAY_MS + TIMER_MARGIN_MS);
     const result = await promise;
 
     expect(result).toBe('recovered');
     expect(fn).toHaveBeenCalledTimes(2);
     expect(core.warning).toHaveBeenCalledWith(
-      expect.stringContaining('test-op failed (attempt 1/3)')
+      expect.stringContaining(`test-op failed (attempt 1/${DEFAULT_MAX_ATTEMPTS})`)
     );
   });
 
@@ -48,10 +49,8 @@ describe('retryWithBackoff', () => {
       .mockRejectedValueOnce(new Error('persistent'));
 
     const promise = retryWithBackoff(fn, { label: 'test-op', maxAttempts: 2 });
-    // Attach rejection handler immediately to prevent unhandled rejection
     const resultPromise = promise.catch((e: Error) => e);
-    // Advance past retry delay
-    await vi.advanceTimersByTimeAsync(1100);
+    await vi.advanceTimersByTimeAsync(DEFAULT_BASE_DELAY_MS + TIMER_MARGIN_MS);
     const result = await resultPromise;
 
     expect(result).toBeInstanceOf(Error);
@@ -66,16 +65,19 @@ describe('retryWithBackoff', () => {
       .mockRejectedValueOnce(new Error('fail-3'))
       .mockResolvedValueOnce('ok');
 
+    const customBaseDelay = 500;
+    const customMaxAttempts = 4;
     const promise = retryWithBackoff(fn, {
       label: 'custom',
-      maxAttempts: 4,
-      baseDelayMs: 500,
+      maxAttempts: customMaxAttempts,
+      baseDelayMs: customBaseDelay,
     });
-    // Advance through 3 retry delays: 500 + 1000 + 2000 = 3500ms
-    await vi.advanceTimersByTimeAsync(4000);
+    // Max total delay: 500 + 1000 + 2000 = 3500ms
+    const maxTotalDelay = customBaseDelay + customBaseDelay * 2 + customBaseDelay * 4;
+    await vi.advanceTimersByTimeAsync(maxTotalDelay + TIMER_MARGIN_MS);
     const result = await promise;
 
     expect(result).toBe('ok');
-    expect(fn).toHaveBeenCalledTimes(4);
+    expect(fn).toHaveBeenCalledTimes(customMaxAttempts);
   });
 });

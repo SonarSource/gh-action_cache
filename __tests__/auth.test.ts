@@ -21,6 +21,7 @@ vi.mock('@aws-sdk/client-cognito-identity', () => {
 import * as core from '@actions/core';
 import { __sendMock as sendMock } from '@aws-sdk/client-cognito-identity';
 import { getCognitoCredentials } from '../src/auth';
+import { DEFAULT_MAX_ATTEMPTS } from '../src/retry';
 
 const fastRetry = { retryOptions: { baseDelayMs: 1 } };
 
@@ -106,7 +107,7 @@ describe('getCognitoCredentials', () => {
     expect(result.accessKeyId).toBe('AKIARETRY');
     expect(core.getIDToken).toHaveBeenCalledTimes(2);
     expect(core.warning).toHaveBeenCalledWith(
-      expect.stringContaining('GitHub OIDC token failed (attempt 1/3)')
+      expect.stringContaining(`GitHub OIDC token failed (attempt 1/${DEFAULT_MAX_ATTEMPTS})`)
     );
   });
 
@@ -133,7 +134,8 @@ describe('getCognitoCredentials', () => {
     });
 
     expect(result.accessKeyId).toBe('AKIA2');
-    expect(sendMock).toHaveBeenCalledTimes(3); // 1 fail + 1 GetId success + 1 GetCreds success
+    // 1 fail + 1 GetId success + 1 GetCreds success
+    expect(sendMock).toHaveBeenCalledTimes(DEFAULT_MAX_ATTEMPTS);
   });
 
   it('retries on transient Cognito GetCredentials failure', async () => {
@@ -159,7 +161,8 @@ describe('getCognitoCredentials', () => {
     });
 
     expect(result.accessKeyId).toBe('AKIA3');
-    expect(sendMock).toHaveBeenCalledTimes(3); // 1 GetId + 1 GetCreds fail + 1 GetCreds success
+    // 1 GetId + 1 GetCreds fail + 1 GetCreds success
+    expect(sendMock).toHaveBeenCalledTimes(DEFAULT_MAX_ATTEMPTS);
   });
 
   it('throws after all OIDC retries exhausted', async () => {
@@ -169,6 +172,6 @@ describe('getCognitoCredentials', () => {
       getCognitoCredentials({ poolId: 'pool', accountId: '123', region: 'eu-central-1', ...fastRetry })
     ).rejects.toThrow('OIDC down');
 
-    expect(core.getIDToken).toHaveBeenCalledTimes(3);
+    expect(core.getIDToken).toHaveBeenCalledTimes(DEFAULT_MAX_ATTEMPTS);
   });
 });

@@ -24,7 +24,7 @@ export interface AwsCredentials {
 }
 
 export async function getCognitoCredentials(config: AuthConfig): Promise<AwsCredentials> {
-  const retryOpts = { maxAttempts: 3, baseDelayMs: 1000, ...config.retryOptions };
+  const retryOpts = { ...config.retryOptions };
 
   core.info('Requesting GitHub OIDC token...');
   const oidcToken = await retryWithBackoff(

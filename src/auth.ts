@@ -13,7 +13,7 @@ export interface AuthConfig {
   poolId: string;
   accountId: string;
   region: string;
-  retryOptions?: Partial<RetryOptions>;
+  retryOptions?: Partial<Omit<RetryOptions, 'label'>>;
 }
 
 export interface AwsCredentials {

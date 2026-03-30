@@ -43999,7 +43999,7 @@ const retry_1 = __nccwpck_require__(9809);
 const IDENTITY_PROVIDER = 'token.actions.githubusercontent.com';
 const AUDIENCE = 'cognito-identity.amazonaws.com';
 async function getCognitoCredentials(config) {
-    const retryOpts = { maxAttempts: 3, baseDelayMs: 1000, ...config.retryOptions };
+    const retryOpts = { ...config.retryOptions };
     core.info('Requesting GitHub OIDC token...');
     const oidcToken = await (0, retry_1.retryWithBackoff)(() => core.getIDToken(AUDIENCE), { label: 'GitHub OIDC token', ...retryOpts });
     core.setSecret(oidcToken);
@@ -44177,10 +44177,14 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.DEFAULT_BASE_DELAY_MS = exports.DEFAULT_MAX_ATTEMPTS = void 0;
 exports.retryWithBackoff = retryWithBackoff;
 const core = __importStar(__nccwpck_require__(7484));
+exports.DEFAULT_MAX_ATTEMPTS = 3;
+exports.DEFAULT_BASE_DELAY_MS = 1000;
+const JITTER_MIN = 0.5;
 async function retryWithBackoff(fn, options) {
-    const { label, maxAttempts = 3, baseDelayMs = 1000 } = options;
+    const { label, maxAttempts = exports.DEFAULT_MAX_ATTEMPTS, baseDelayMs = exports.DEFAULT_BASE_DELAY_MS } = options;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
             return await fn();
@@ -44189,7 +44193,7 @@ async function retryWithBackoff(fn, options) {
             if (attempt === maxAttempts) {
                 throw error;
             }
-            const jitter = 0.5 + Math.random() * 0.5;
+            const jitter = JITTER_MIN + Math.random() * (1 - JITTER_MIN);
             const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt - 1) * jitter);
             const message = error instanceof Error ? error.message : String(error);
             core.warning(`${label} failed (attempt ${attempt}/${maxAttempts}): ${message}. Retrying in ${delayMs}ms...`);

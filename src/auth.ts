@@ -4,6 +4,7 @@ import {
   GetIdCommand,
   GetCredentialsForIdentityCommand,
 } from '@aws-sdk/client-cognito-identity';
+import { retryWithBackoff, RetryOptions } from './retry';
 
 const IDENTITY_PROVIDER = 'token.actions.githubusercontent.com';
 const AUDIENCE = 'cognito-identity.amazonaws.com';
@@ -12,6 +13,7 @@ export interface AuthConfig {
   poolId: string;
   accountId: string;
   region: string;
+  retryOptions?: Partial<RetryOptions>;
 }
 
 export interface AwsCredentials {
@@ -22,20 +24,26 @@ export interface AwsCredentials {
 }
 
 export async function getCognitoCredentials(config: AuthConfig): Promise<AwsCredentials> {
+  const retryOpts = { maxAttempts: 3, baseDelayMs: 1000, ...config.retryOptions };
+
   core.info('Requesting GitHub OIDC token...');
-  const oidcToken = await core.getIDToken(AUDIENCE);
+  const oidcToken = await retryWithBackoff(
+    () => core.getIDToken(AUDIENCE),
+    { label: 'GitHub OIDC token', ...retryOpts }
+  );
   core.setSecret(oidcToken);
 
   const client = new CognitoIdentityClient({ region: config.region });
   const logins = { [IDENTITY_PROVIDER]: oidcToken };
 
   core.info('Exchanging OIDC token for Cognito identity...');
-  const { IdentityId } = await client.send(
-    new GetIdCommand({
+  const { IdentityId } = await retryWithBackoff(
+    () => client.send(new GetIdCommand({
       IdentityPoolId: config.poolId,
       AccountId: config.accountId,
       Logins: logins,
-    })
+    })),
+    { label: 'Cognito GetId', ...retryOpts }
   );
 
   if (!IdentityId) {
@@ -43,11 +51,12 @@ export async function getCognitoCredentials(config: AuthConfig): Promise<AwsCred
   }
 
   core.info('Obtaining AWS credentials from Cognito...');
-  const { Credentials } = await client.send(
-    new GetCredentialsForIdentityCommand({
+  const { Credentials } = await retryWithBackoff(
+    () => client.send(new GetCredentialsForIdentityCommand({
       IdentityId,
       Logins: logins,
-    })
+    })),
+    { label: 'Cognito GetCredentials', ...retryOpts }
   );
 
   if (!Credentials?.AccessKeyId || !Credentials?.SecretKey || !Credentials?.SessionToken) {

@@ -44180,9 +44180,11 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.DEFAULT_BASE_DELAY_MS = exports.DEFAULT_MAX_ATTEMPTS = void 0;
 exports.retryWithBackoff = retryWithBackoff;
 const core = __importStar(__nccwpck_require__(7484));
+const node_crypto_1 = __nccwpck_require__(7598);
 exports.DEFAULT_MAX_ATTEMPTS = 3;
 exports.DEFAULT_BASE_DELAY_MS = 5000;
-const JITTER_MIN = 0.5;
+const JITTER_MIN_PCT = 50;
+const JITTER_RANGE_PCT = 50;
 async function retryWithBackoff(fn, options) {
     const { label, maxAttempts = exports.DEFAULT_MAX_ATTEMPTS, baseDelayMs = exports.DEFAULT_BASE_DELAY_MS } = options;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -44193,8 +44195,8 @@ async function retryWithBackoff(fn, options) {
             if (attempt === maxAttempts) {
                 throw error;
             }
-            const jitter = JITTER_MIN + Math.random() * (1 - JITTER_MIN);
-            const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt - 1) * jitter);
+            const jitterPct = JITTER_MIN_PCT + (0, node_crypto_1.randomInt)(JITTER_RANGE_PCT + 1);
+            const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt - 1) * jitterPct / 100);
             const message = error instanceof Error ? error.message : String(error);
             core.warning(`${label} failed (attempt ${attempt}/${maxAttempts}): ${message}. Retrying in ${delayMs}ms...`);
             await new Promise((resolve) => setTimeout(resolve, delayMs));

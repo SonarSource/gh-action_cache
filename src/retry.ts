@@ -1,8 +1,10 @@
 import * as core from '@actions/core';
+import { randomInt } from 'node:crypto';
 
 export const DEFAULT_MAX_ATTEMPTS = 3;
 export const DEFAULT_BASE_DELAY_MS = 5000;
-const JITTER_MIN = 0.5;
+const JITTER_MIN_PCT = 50;
+const JITTER_RANGE_PCT = 50;
 
 export interface RetryOptions {
   label: string;
@@ -23,8 +25,8 @@ export async function retryWithBackoff<T>(
       if (attempt === maxAttempts) {
         throw error;
       }
-      const jitter = JITTER_MIN + Math.random() * (1 - JITTER_MIN);
-      const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt - 1) * jitter);
+      const jitterPct = JITTER_MIN_PCT + randomInt(JITTER_RANGE_PCT + 1);
+      const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt - 1) * jitterPct / 100);
       const message = error instanceof Error ? error.message : String(error);
       core.warning(
         `${label} failed (attempt ${attempt}/${maxAttempts}): ${message}. Retrying in ${delayMs}ms...`

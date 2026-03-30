@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 
 export const DEFAULT_MAX_ATTEMPTS = 3;
-export const DEFAULT_BASE_DELAY_MS = 1000;
+export const DEFAULT_BASE_DELAY_MS = 5000;
 const JITTER_MIN = 0.5;
 
 export interface RetryOptions {

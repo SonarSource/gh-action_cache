@@ -44181,7 +44181,7 @@ exports.DEFAULT_BASE_DELAY_MS = exports.DEFAULT_MAX_ATTEMPTS = void 0;
 exports.retryWithBackoff = retryWithBackoff;
 const core = __importStar(__nccwpck_require__(7484));
 exports.DEFAULT_MAX_ATTEMPTS = 3;
-exports.DEFAULT_BASE_DELAY_MS = 1000;
+exports.DEFAULT_BASE_DELAY_MS = 5000;
 const JITTER_MIN = 0.5;
 async function retryWithBackoff(fn, options) {
     const { label, maxAttempts = exports.DEFAULT_MAX_ATTEMPTS, baseDelayMs = exports.DEFAULT_BASE_DELAY_MS } = options;

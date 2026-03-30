@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@actions/core', () => ({
   warning: vi.fn(),
-  info: vi.fn(),
 }));
 
 import * as core from '@actions/core';

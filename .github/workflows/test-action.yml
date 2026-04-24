@@ -16,7 +16,7 @@ jobs:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
       with:
-        version: 2025.7.12
+        version: 2026.4.17
     - name: Cache Python dependencies
       id: cache-python
       uses: ./
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
         with:
-          version: 2025.7.12
+          version: 2026.4.17
       - name: Cache Python dependencies
         id: cache-python
         uses: ./
@@ -84,7 +84,7 @@ jobs:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
       with:
-        version: 2025.7.12
+        version: 2026.4.17
     - name: Cache Go modules with fallback branch
       id: cache-go
       uses: ./
@@ -130,7 +130,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
         with:
-          version: 2025.7.12
+          version: 2026.4.17
 
       # Step 1: Use our cache action (should restore and later save)
       - name: Cache with S3
@@ -198,7 +198,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
         with:
-          version: 2025.7.12
+          version: 2026.4.17
 
       # First cache invocation
       - name: Cache pip dependencies
@@ -240,7 +240,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
         with:
-          version: 2025.7.12
+          version: 2026.4.17
 
       # Simulate pre-existing AWS config (as if configure-aws-credentials ran before)
       - name: Create pre-existing AWS config
@@ -309,7 +309,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
         with:
-          version: 2025.7.12
+          version: 2026.4.17
 
       - name: Cache with S3
         id: cache-test

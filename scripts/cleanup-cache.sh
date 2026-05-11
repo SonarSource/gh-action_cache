@@ -222,17 +222,20 @@ while true; do
     break
   fi
 
-  DELETE_JSON=$(echo "$BATCH" | jq -R -s '
+  DELETE_FILE=$(mktemp)
+  echo "$BATCH" | jq -R -s '
     split("\n") | map(select(length > 0)) |
     { Objects: map({ Key: . }), Quiet: true }
-  ')
+  ' > "$DELETE_FILE"
 
   aws s3api delete-objects \
     --bucket "${S3_BUCKET}" \
-    --delete "$DELETE_JSON" > /dev/null || {
+    --delete "file://$DELETE_FILE" > /dev/null || {
     echo "ERROR: Failed to delete batch of objects" >&2
+    rm -f "$DELETE_FILE"
     exit 1
   }
+  rm -f "$DELETE_FILE"
 
   BATCH_COUNT=$(echo "$BATCH" | wc -l | tr -d ' ')
   DELETED=$((DELETED + BATCH_COUNT))

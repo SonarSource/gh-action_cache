@@ -212,8 +212,9 @@ echo "Deleting ${MATCH_COUNT} object(s)..."
 
 BATCH_SIZE=1000
 KEYS_FILE=$(mktemp)
+DELETE_FILE=""
 echo "$MATCHED_KEYS" > "$KEYS_FILE"
-trap 'rm -f "$KEYS_FILE"' EXIT
+trap 'rm -f "$KEYS_FILE" "${DELETE_FILE:-}"' EXIT
 
 DELETED=0
 while true; do
@@ -232,10 +233,10 @@ while true; do
     --bucket "${S3_BUCKET}" \
     --delete "file://$DELETE_FILE" > /dev/null || {
     echo "ERROR: Failed to delete batch of objects" >&2
-    rm -f "$DELETE_FILE"
     exit 1
   }
   rm -f "$DELETE_FILE"
+  DELETE_FILE=""
 
   BATCH_COUNT=$(echo "$BATCH" | wc -l | tr -d ' ')
   DELETED=$((DELETED + BATCH_COUNT))

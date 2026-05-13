@@ -48,7 +48,26 @@ inputs:
 outputs:
   cache-hit:
     description: A boolean value to indicate an exact match was found for the primary key
-    value: ${{ steps.github-cache.outputs.cache-hit || steps.s3-cache.outputs.cache-hit || steps.github-import.outputs.cache-hit }}
+    value: ${{ steps.cache-outputs.outputs.cache-hit }}
+  cache-matched-key:
+    description: >
+      The cache key for which a match was found. Equals the primary key on an exact hit, one of the user-provided restore keys on a partial
+      hit, or empty when no match was found.
+    value: ${{ steps.cache-outputs.outputs.matched-key }}
+  restore-key-hit:
+    description: >
+      The restore key that was prefix-matched. Populated only when `cache-hit` is `false` AND a restore key matched (partial hit). Empty on
+      exact hits and on full misses — i.e. set if this was a partial restore.
+    value: ${{ steps.cache-outputs.outputs.cache-hit != 'true' && steps.cache-outputs.outputs.matched-key || '' }}
+  backend:
+    description: The cache backend that was actually used for this invocation (`github` or `s3`).
+    value: ${{ steps.cache-backend.outputs.cache-backend }}
+  cache-size-bytes:
+    description: >
+      Total size in bytes of the cached path(s) at restore-time (Linux only; empty on other platforms).
+      The action also writes a per-invocation JSON record to /tmp/ci-metrics/cache-${step}.json for the pipeline-runtime-metrics
+      job-completed hook to ingest.
+    value: ${{ steps.cache-metrics.outputs.cache-size-bytes }}
 
 runs:
   using: composite
@@ -78,7 +97,6 @@ runs:
               jq -r '.visibility // "private"')
           fi
           echo "Repository visibility: $REPO_VISIBILITY"
-
           CACHE_BACKEND="s3"
           if [[ "$REPO_VISIBILITY" == "public" ]]; then
             WAS_GITHUB_DEFAULT="true"
@@ -87,10 +105,10 @@ runs:
             echo "Using S3 cache for private/internal repository"
           fi
         fi
-
         echo "cache-backend=$CACHE_BACKEND" >> "$GITHUB_OUTPUT"
         echo "backend-source=$BACKEND_SOURCE" >> "$GITHUB_OUTPUT"
         echo "was-github-default=$WAS_GITHUB_DEFAULT" >> "$GITHUB_OUTPUT"
+        echo "ACTION_PATH_CACHE=${{ github.action_path }}" >> "$GITHUB_ENV"
 
     - name: Cache with GitHub Actions (public repos)
       if: steps.cache-backend.outputs.cache-backend == 'github'
@@ -104,13 +122,6 @@ runs:
         enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
-
-    - name: Set action path for scripts
-      if: steps.cache-backend.outputs.cache-backend == 's3'
-      shell: bash
-      run: |
-        ACTION_PATH_CACHE="${{ github.action_path }}"
-        echo "ACTION_PATH_CACHE=$ACTION_PATH_CACHE" >> "$GITHUB_ENV"
 
     - name: Setup S3 cache credentials
       if: steps.cache-backend.outputs.cache-backend == 's3'
@@ -214,6 +225,75 @@ runs:
       run: |
         echo "::error::Cache miss: no cache found in S3 or GitHub for key '${CACHE_KEY}'"
         exit 1
+
+    # Aggregate `cache-hit` and `cache-matched-key` across the three possible restore steps once, so every consumer (the top-level outputs
+    # and the cache-metrics sub-action) reads from a single source instead of repeating the triple-OR. Adding a fourth backend would only
+    # touch this step.
+    - name: Aggregate cache outputs across backends
+      id: cache-outputs
+      shell: bash
+      env:
+        HIT_GITHUB: ${{ steps.github-cache.outputs.cache-hit }}
+        HIT_S3: ${{ steps.s3-cache.outputs.cache-hit }}
+        HIT_IMPORT: ${{ steps.github-import.outputs.cache-hit }}
+        MATCHED_GITHUB: ${{ steps.github-cache.outputs.cache-matched-key }}
+        MATCHED_S3: ${{ steps.s3-cache.outputs.cache-matched-key }}
+        MATCHED_IMPORT: ${{ steps.github-import.outputs.cache-matched-key }}
+      run: |
+        CACHE_HIT="${HIT_GITHUB:-${HIT_S3:-${HIT_IMPORT:-}}}"
+        MATCHED_KEY="${MATCHED_GITHUB:-${MATCHED_S3:-${MATCHED_IMPORT:-}}}"
+        echo "cache-hit=${CACHE_HIT}" >> "$GITHUB_OUTPUT"
+        echo "matched-key=${MATCHED_KEY}" >> "$GITHUB_OUTPUT"
+
+    # Feature flag: cache-metrics is opt-in via the CI_METRICS_ENABLED env var (case-insensitive `true`). The runner pod template /
+    # WarpBuild AMI sets it for the repos that are part of the BUILD-11068 pilot; everywhere else, the cache flow runs unchanged and no
+    # metrics are emitted.
+    - name: Resolve CI_METRICS_ENABLED flag
+      id: metrics-flag
+      shell: bash
+      env:
+        RAW: ${{ env.CI_METRICS_ENABLED }}
+      run: |
+        if [[ "${RAW,,}" == "true" ]]; then
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Prepare local cache-metrics sub-action
+      id: cache-metrics-prep
+      if: runner.os == 'Linux' && steps.metrics-flag.outputs.enabled == 'true'
+      shell: bash
+      # Fail-open: the metrics flow must never break the cache flow. The next step's `if:` will skip gracefully if preparation fails.
+      run: |
+        set +e
+        mkdir -p .actions
+        ln -sf "$ACTION_PATH_CACHE/cache-metrics" .actions/cache-metrics
+        if [ ! -e .actions/cache-metrics/action.yml ]; then
+          echo "::warning::cache-metrics: could not prepare .actions/cache-metrics symlink — skipping metrics."
+          echo "prepared=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        # `git add -f` stages the symlink so `git clean -ffdx` (used by actions/checkout with default `clean: true`) does not remove it
+        # between main and post steps.
+        if ! git add -f .actions 2>/dev/null; then
+          echo "::warning::cache-metrics: could not 'git add' the .actions symlink."
+        fi
+        echo "prepared=true" >> "$GITHUB_OUTPUT"
+        exit 0
+
+    - name: Emit cache metrics (size + saved)
+      if: runner.os == 'Linux' && steps.cache-metrics-prep.outputs.prepared == 'true'
+      id: cache-metrics
+      uses: ./.actions/cache-metrics
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        cache-hit: ${{ steps.cache-outputs.outputs.cache-hit }}
+        matched-key: ${{ steps.cache-outputs.outputs.matched-key }}
+        backend: ${{ steps.cache-backend.outputs.cache-backend }}
+        lookup-only: ${{ inputs.lookup-only }}
+        step-id: ${{ github.action }}
 
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'

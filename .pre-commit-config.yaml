@@ -9,10 +9,13 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # ncc-bundled sub-actions live in <sub-action>/dist/ and we don't control their formatting.
       - id: trailing-whitespace
+        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/)
       - id: end-of-file-fixer
+        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/)
       - id: check-added-large-files
-        exclude: ^(credential-setup/dist/|credential-guard/dist/)
+        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/)
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.48.0
     hooks:

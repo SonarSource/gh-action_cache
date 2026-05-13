@@ -13,6 +13,8 @@ credential-setup/dist/**/*.d.ts
 credential-setup/dist/**/*.d.ts.map
 credential-guard/dist/**/*.d.ts
 credential-guard/dist/**/*.d.ts.map
+cache-metrics/dist/**/*.d.ts
+cache-metrics/dist/**/*.d.ts.map
 
 # Test coverage
 coverage/

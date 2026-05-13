@@ -62,10 +62,12 @@ These must be committed since GitHub Actions runs them directly.
 
 ### Input Environment Variables
 
-| Environment Variable  | Description                                                                       |
-|-----------------------|-----------------------------------------------------------------------------------|
-| `CACHE_BACKEND`       | Force specific backend: `github` or `s3` (overrides auto-detection)               |
-| `CACHE_IMPORT_GITHUB` | Disable GitHub cache fallback for S3 backend (migration mode) when set to `false` |
+| Environment Variable | Description |
+| --- | --- |
+| `CACHE_BACKEND` | Force specific backend: `github` or `s3` (overrides auto-detection). |
+| `CACHE_IMPORT_GITHUB` | Disable GitHub cache fallback for S3 backend (migration mode) when set to `false`. |
+| `CI_METRICS_ENABLED` | Opt-in feature flag for pipeline runtime metrics (Linux only). Set to `true` (case-insensitive) to enable emission of the `cache-size-bytes` output and the per-invocation JSON record at `${CI_METRICS_DIR}/cache-*.json`. Unset, empty, or any other value: metrics disabled, cache flow unchanged. |
+| `CI_METRICS_DIR` | Output directory for the per-invocation metrics JSON (only consulted when `CI_METRICS_ENABLED=true`). Provided by the ARC pod template / WarpBuild AMI; defaults to `/tmp/ci-metrics` when unset or empty. |
 
 ## Inputs
 
@@ -177,9 +179,75 @@ gh variable set CACHE_IMPORT_GITHUB --body "true"
 
 ## Outputs
 
-| Output      | Description                                    |
-|-------------|------------------------------------------------|
-| `cache-hit` | Boolean indicating exact match for primary key |
+| Output              | Description                                                                                                                                   |
+|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
+| `cache-hit`         | Boolean indicating an exact match for the primary key.                                                                                        |
+| `cache-matched-key` | The cache key for which a match was found — primary key on an exact hit, restore key on a partial hit, empty on a miss.                       |
+| `restore-key-hit`   | The restore key that was prefix-matched. Populated only when `cache-hit` is `false` AND a restore key matched (partial hit). Empty otherwise. |
+| `backend`           | The cache backend that was actually used (`github` or `s3`).                                                                                  |
+| `cache-size-bytes`  | Total size in bytes of the cached path(s) at restore-time (Linux only; empty on other platforms).                                             |
+
+### Pipeline runtime metrics
+
+On Linux runners — and **only when the `CI_METRICS_ENABLED` environment variable is set to `true`**
+(case-insensitive) — the action writes a per-invocation JSON record to `${CI_METRICS_DIR}/cache-${step}.json`
+for the [pipeline runtime metrics](https://sonarsource.atlassian.net/browse/BUILD-11068) `job-completed.sh`
+hook to ingest. The output directory is taken from the `CI_METRICS_DIR` environment variable (provided by the
+ARC pod template / WarpBuild AMI); it falls back to `/tmp/ci-metrics` when the variable is unset or empty.
+The record captures both the restore-time size and the pre-save size, plus whether the cache was actually
+saved.
+
+When `CI_METRICS_ENABLED` is unset or set to anything other than `true`, the cache flow runs exactly as
+before — no metrics steps, no JSON file, and `cache-size-bytes` is empty. The other outputs (`cache-hit`,
+`cache-matched-key`, `restore-key-hit`, `backend`) are unaffected.
+
+**Example — partial restore-key hit (primary missed, prefix-matched older entry restored, then re-saved under primary key):**
+
+```json
+{
+    "step": "cache-python",
+    "key": "python-Linux-pytest-requests",
+    "restore-key-hit": "python-Linux-",
+    "backend": "s3",
+    "cache-hit": false,
+    "size-bytes-restored": 120000000,
+    "size-bytes-at-end": 482344960,
+    "saved": true,
+    "timestamp-restored": "2026-05-12T10:42:11.000Z",
+    "timestamp-at-end": "2026-05-12T10:45:33.000Z"
+}
+```
+
+**Example — exact hit (primary key matched, cache action skips save):**
+
+```json
+{
+    "step": "cache-maven",
+    "key": "maven-deps-abc123",
+    "restore-key-hit": null,
+    "backend": "s3",
+    "cache-hit": true,
+    "size-bytes-restored": 471859200,
+    "size-bytes-at-end": 471859200,
+    "saved": false,
+    "timestamp-restored": "2026-05-12T10:42:11.000Z",
+    "timestamp-at-end": "2026-05-12T10:45:33.000Z"
+}
+```
+
+Field semantics:
+
+| Field                 | Meaning                                                                                                                                                                                                                                         |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `step`                | Slugified id of the calling step (e.g. `cache-python`). Distinguishes multiple cache invocations in the same job.                                                                                                                               |
+| `key`                 | Primary cache key.                                                                                                                                                                                                                              |
+| `cache-hit`           | `true` if the primary key was an exact match. Drives the `saved` outcome.                                                                                                                                                                       |
+| `restore-key-hit`     | When `cache-hit` is `false` AND a prefix-matched restore key was found, the matched restore key. `null` otherwise (exact hit, no match, or lookup-only).                                                                                        |
+| `size-bytes-restored` | Size of the cache content at restore-time. `0` on a full miss with no partial hit.                                                                                                                                                              |
+| `size-bytes-at-end`   | Size of the path at job end (measured in the post step, before the cache save runs). Reflects what *would* be saved when `saved` is true. When `saved` is false, this value still reports the path size at end-of-job but nothing is persisted. |
+| `saved`               | `true` if the cache action actually persists the cache. `false` when `cache-hit` was true (cache action skips save on exact match) or when `lookup-only` was set.                                                                               |
+
+The metrics step fails open — if measurement fails for any reason, the cache flow continues unaffected.
 
 ## S3 Cache Action
 
@@ -203,7 +271,7 @@ The action searches for cache entries in this order:
 2. **Default branch exact-match fallback** (when `fallback-to-default-branch: true`): `refs/heads/${DEFAULT_BRANCH}/${key}`
 3. **Branch-specific restore keys** (if `restore-keys` provided): `${BRANCH_NAME}/${restore-key}` for each restore key (prefix match)
 4. **Default branch restore key fallbacks** (if `restore-keys` provided):
-    `refs/heads/${DEFAULT_BRANCH}/${restore-key}` for each restore key (prefix match, lowest priority)
+   `refs/heads/${DEFAULT_BRANCH}/${restore-key}` for each restore key (prefix match, lowest priority)
 
 #### Example — with restore-keys
 
@@ -369,11 +437,11 @@ jobs:
 
 | Scenario                       | Branch              | Key              | Dry-run |
 |--------------------------------|---------------------|------------------|---------|
-| List all cache entries         | _(empty)_           | _(empty)_        | n/a     |
-| Preview what would be deleted  | `feature/my-branch` | _(optional)_     | `true`  |
-| Delete cache for a branch      | `feature/my-branch` | _(optional)_     | `false` |
+| List all cache entries         | *(empty)*           | *(empty)*        | n/a     |
+| Preview what would be deleted  | `feature/my-branch` | *(optional)*     | `true`  |
+| Delete cache for a branch      | `feature/my-branch` | *(optional)*     | `false` |
 | Delete key for given branch    | `feature/my-branch` | `sccache-Linux-` | `false` |
-| Delete key across all branches | _(empty)_           | `sccache-Linux-` | `false` |
+| Delete key across all branches | *(empty)*           | `sccache-Linux-` | `false` |
 
 ### Running via GitHub CLI
 

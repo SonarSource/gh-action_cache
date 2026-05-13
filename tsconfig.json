@@ -15,5 +15,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "__tests__", "credential-setup", "credential-guard"]
+  "exclude": ["node_modules", "dist", "__tests__", "credential-setup", "credential-guard", "cache-metrics"]
 }

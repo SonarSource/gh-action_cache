@@ -1,0 +1,38 @@
+name: Cache Metrics
+description: Internal action - measures cached path size at restore-time and job-end, writes /tmp/ci-metrics/cache-${step}.json
+inputs:
+  path:
+    description: The cached path(s) — same value as the top-level cache action input
+    required: true
+  key:
+    description: Primary cache key
+    required: true
+  cache-hit:
+    description: Whether the primary key matched an existing cache entry
+    required: false
+    default: ''
+  matched-key:
+    description: The actual restore key that matched (may be a restore-keys prefix on partial hits)
+    required: false
+    default: ''
+  backend:
+    description: Which backend was used (`github` or `s3`)
+    required: true
+  lookup-only:
+    description: Whether the caller requested lookup-only (no restore, no save)
+    required: false
+    default: 'false'
+  step-id:
+    description: Unique discriminator for the per-invocation JSON filename (typically `github.action` of the caller)
+    required: true
+outputs:
+  cache-size-bytes:
+    description: Total size in bytes of the cached path(s) at restore-time
+runs:
+  using: node20
+  main: dist/main/index.js
+  post: dist/post/index.js
+  # Run the post step even when an earlier step in the job failed — metrics are
+  # most useful precisely when something went wrong, and the cache-metrics post
+  # step is fail-open (cannot break the cache flow on its own).
+  post-if: always()

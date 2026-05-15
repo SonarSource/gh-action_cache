@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-github-cache:
-    runs-on: github-ubuntu-latest-s
+    runs-on: warp-custom-ubuntu-24-04
     permissions:
       id-token: write
       contents: read
@@ -41,7 +41,7 @@ jobs:
       run: python -m pytest --version
 
   test-s3-cache:
-    runs-on: github-ubuntu-latest-s
+    runs-on: warp-custom-ubuntu-24-04
     permissions:
       id-token: write
       contents: read
@@ -76,7 +76,7 @@ jobs:
         run: python -m pytest --version
 
   test-s3-cache-with-fallback:
-    runs-on: github-ubuntu-latest-s
+    runs-on: warp-custom-ubuntu-24-04
     permissions:
       id-token: write
       contents: read
@@ -122,7 +122,7 @@ jobs:
       run: go build -o hello main.go
 
   test-s3-cache-with-credential-interference:
-    runs-on: github-ubuntu-latest-s
+    runs-on: warp-custom-ubuntu-24-04
     permissions:
       id-token: write
       contents: read
@@ -190,7 +190,7 @@ jobs:
 
   # Reproduces: ~/.aws/config corruption from multiple credential_process entries
   test-s3-cache-multiple-invocations:
-    runs-on: github-ubuntu-latest-s
+    runs-on: warp-custom-ubuntu-24-04
     permissions:
       id-token: write
       contents: read
@@ -232,7 +232,7 @@ jobs:
   # Reproduces: pre-existing AWS config from configure-aws-credentials
   # https://github.com/SonarSource/sonarsource-iam/actions/runs/21951781857/job/63404298650#step:5:9
   test-s3-cache-with-preset-aws-config:
-    runs-on: github-ubuntu-latest-s
+    runs-on: warp-custom-ubuntu-24-04
     permissions:
       id-token: write
       contents: read
@@ -301,7 +301,7 @@ jobs:
   # Regression test: git clean -ffdx must not break credential-guard post step
   # Reproduces: https://github.com/SonarSource/sonar-dummy/actions/runs/21997126216
   test-s3-cache-survives-git-clean:
-    runs-on: github-ubuntu-latest-s
+    runs-on: warp-custom-ubuntu-24-04
     permissions:
       id-token: write
       contents: read
@@ -347,7 +347,7 @@ jobs:
       - test-s3-cache-multiple-invocations
       - test-s3-cache-with-preset-aws-config
       - test-s3-cache-survives-git-clean
-    runs-on: github-ubuntu-latest-s
+    runs-on: warp-custom-ubuntu-24-04
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # v1.2.2

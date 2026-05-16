@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
 
 vi.mock('@actions/core', () => ({
   getInput: vi.fn(),
@@ -15,6 +15,9 @@ vi.mock('@actions/core', () => ({
 }));
 
 import * as core from '@actions/core';
+
+const AWS_DIR_PERMISSIONS = 0o700;
+const AWS_FILE_PERMISSIONS = 0o600;
 
 describe('credential-guard-main', () => {
   beforeEach(() => {
@@ -139,11 +142,11 @@ describe('credential-guard-post', () => {
 
     // Verify directory permissions (0o700)
     const awsDirStat = await fs.stat(path.join(fakeAwsHome, '.aws'));
-    expect(awsDirStat.mode & 0o777).toBe(0o700);
+    expect(awsDirStat.mode & 0o777).toBe(AWS_DIR_PERMISSIONS);
 
     // Verify file permissions (0o600)
     const credsStat = await fs.stat(path.join(fakeAwsHome, '.aws', 'credentials'));
-    expect(credsStat.mode & 0o777).toBe(0o600);
+    expect(credsStat.mode & 0o777).toBe(AWS_FILE_PERMISSIONS);
   });
 
   it('writes ~/.aws/config with correct region', async () => {
@@ -175,7 +178,7 @@ describe('credential-guard-post', () => {
 
     // Verify file permissions (0o600)
     const configStat = await fs.stat(path.join(fakeAwsHome, '.aws', 'config'));
-    expect(configStat.mode & 0o777).toBe(0o600);
+    expect(configStat.mode & 0o777).toBe(AWS_FILE_PERMISSIONS);
   });
 
   it('logs fallback message after writing credentials file', async () => {

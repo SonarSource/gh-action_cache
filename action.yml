@@ -245,24 +245,10 @@ runs:
         echo "cache-hit=${CACHE_HIT}" >> "$GITHUB_OUTPUT"
         echo "matched-key=${MATCHED_KEY}" >> "$GITHUB_OUTPUT"
 
-    # Feature flag: cache-metrics is opt-in via the CI_METRICS_ENABLED env var (case-insensitive `true`). The runner pod template /
-    # WarpBuild AMI sets it for the repos that are part of the BUILD-11068 pilot; everywhere else, the cache flow runs unchanged and no
-    # metrics are emitted.
-    - name: Resolve CI_METRICS_ENABLED flag
-      id: metrics-flag
-      shell: bash
-      env:
-        RAW: ${{ env.CI_METRICS_ENABLED }}
-      run: |
-        if [[ "${RAW,,}" == "true" ]]; then
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "enabled=false" >> "$GITHUB_OUTPUT"
-        fi
-
+    # CI_METRICS_ENABLED is set by the runner pod template / WarpBuild AMI for the BUILD-11068 pilot repos.
     - name: Prepare local cache-metrics sub-action
       id: cache-metrics-prep
-      if: runner.os == 'Linux' && steps.metrics-flag.outputs.enabled == 'true'
+      if: runner.os == 'Linux' && env.CI_METRICS_ENABLED == 'true'
       shell: bash
       # Fail-open: the metrics flow must never break the cache flow. The next step's `if:` will skip gracefully if preparation fails.
       run: |

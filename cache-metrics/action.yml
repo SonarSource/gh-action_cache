@@ -32,7 +32,6 @@ runs:
   using: node20
   main: dist/main/index.js
   post: dist/post/index.js
-  # Run the post step even when an earlier step in the job failed — metrics are
-  # most useful precisely when something went wrong, and the cache-metrics post
-  # step is fail-open (cannot break the cache flow on its own).
+  # Run the post step even when an earlier step in the job failed — metrics are most useful precisely when something went wrong, and the
+  # cache-metrics post step is fail-open (cannot break the cache flow on its own).
   post-if: always()

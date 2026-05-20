@@ -4,6 +4,56 @@ import * as os from 'os';
 import * as path from 'path';
 
 const AWS_REGION = 'eu-central-1';
+const CACHE_METRICS_WORKSPACE_LINK = path.join('.actions', 'cache-metrics');
+
+/**
+ * Recreate the `.actions/cache-metrics` symlink if a nested actions/checkout wiped it
+ * between this composite's main steps and cache-metrics' post step. Runs before the
+ * cache-metrics post step (LIFO ordering) so its `uses: ./.actions/cache-metrics`
+ * resolves even after `git clean -ffdx` + `git reset --hard HEAD` +
+ * `git checkout --force <ref>` from a nested actions/checkout in the same job.
+ *
+ * Best-effort: any failure here is logged but never fails the credential-guard post step.
+ */
+export async function ensureCacheMetricsSymlink(target: string): Promise<void> {
+  if (!target) return;
+
+  try {
+    await fs.access(path.join(CACHE_METRICS_WORKSPACE_LINK, 'action.yml'));
+    return;
+  } catch {
+    // fall through to recreate
+  }
+
+  try {
+    await fs.access(path.join(target, 'action.yml'));
+  } catch (err) {
+    core.warning(
+      `cache-metrics symlink keeper: target action.yml missing under ${target} — skipping recreation: ${
+        err instanceof Error ? err.message : err
+      }`
+    );
+    return;
+  }
+
+  try {
+    await fs.mkdir(path.dirname(CACHE_METRICS_WORKSPACE_LINK), { recursive: true });
+    try {
+      await fs.unlink(CACHE_METRICS_WORKSPACE_LINK);
+    } catch {
+      // either doesn't exist (ENOENT) or is a directory (EISDIR) — unlink fails silently;
+      // symlink() will error with EEXIST in that case and the outer catch will log a warning.
+    }
+    await fs.symlink(target, CACHE_METRICS_WORKSPACE_LINK);
+    core.info(`cache-metrics symlink keeper: recreated ${CACHE_METRICS_WORKSPACE_LINK} -> ${target}`);
+  } catch (err) {
+    core.warning(
+      `cache-metrics symlink keeper: failed to recreate ${CACHE_METRICS_WORKSPACE_LINK}: ${
+        err instanceof Error ? err.message : err
+      }`
+    );
+  }
+}
 
 export function getAwsDir(): string {
   return path.join(process.env.__TEST_AWS_HOME || os.homedir(), '.aws');
@@ -40,9 +90,14 @@ export async function writeAwsCredentialsFile(creds: {
 }
 
 export async function run(): Promise<void> {
+  // Run the symlink keeper FIRST so cache-metrics' post step (which fires after this one in
+  // the LIFO post phase) can still resolve `./.actions/cache-metrics/action.yml` even when
+  // a nested actions/checkout has wiped the workspace symlink. Best-effort.
+  await ensureCacheMetricsSymlink(core.getState('cache-metrics-action-path'));
+
   const credentialsFile = core.getState('credentials-file');
   if (!credentialsFile) {
-    core.warning('No credentials file path in state — skipping credential restore');
+    core.info('No credentials file path in state — skipping credential restore');
     return;
   }
 

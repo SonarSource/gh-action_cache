@@ -22,5 +22,13 @@
   "dependencies": {
     "@actions/core": "^1.11.1",
     "@aws-sdk/client-cognito-identity": "^3.750.0"
+  },
+  "overrides": {
+    "fast-xml-parser": "^5.7.0",
+    "undici": "^6.24.0",
+    "vite": "^7.3.2",
+    "rollup": "^4.59.0",
+    "postcss": "^8.5.10",
+    "picomatch": "^4.0.4"
   }
 }

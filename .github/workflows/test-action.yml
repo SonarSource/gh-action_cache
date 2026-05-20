@@ -333,6 +333,43 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest requests
 
+  # Regression test: with CI_METRICS_ENABLED, the cache-metrics post step must still find
+  # `./.actions/cache-metrics` after another action runs actions/checkout (clean + reset + force-checkout),
+  # which is what wiped the symlink in https://github.com/SonarSource/sonar-dummy/actions/runs/26102811096/job/76758257880
+  test-s3-cache-survives-git-clean-with-metrics:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      CI_METRICS_ENABLED: 'true'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          version: 2025.7.12
+
+      - name: Cache with S3 (metrics enabled)
+        id: cache-test
+        uses: ./
+        with:
+          path: ~/.cache/pip
+          key: git-clean-metrics-test-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: git-clean-metrics-test-${{ runner.os }}-
+          environment: dev
+          backend: s3
+
+      # Simulate what a nested actions/checkout does (clean → reset --hard → fetch → checkout --force).
+      # This is the sequence that wiped `.actions/cache-metrics` from the workspace between main and post
+      # in the pre-commit job — the `git add -f .actions` workaround survives the clean but not the reset.
+      - name: Re-run actions/checkout (simulates nested action's checkout)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Create something to cache
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest requests
+
       # SUCCESS: credential-guard post step runs, then runs-on/cache saves to S3
 
   # Validates cache-size-bytes output + ${CI_METRICS_DIR}/cache-*.json (gated by CI_METRICS_ENABLED).
@@ -400,6 +437,7 @@ jobs:
       - test-s3-cache-multiple-invocations
       - test-s3-cache-with-preset-aws-config
       - test-s3-cache-survives-git-clean
+      - test-s3-cache-survives-git-clean-with-metrics
       - test-cache-metrics-output
     runs-on: github-ubuntu-latest-s
     steps:

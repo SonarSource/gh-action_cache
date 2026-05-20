@@ -4,8 +4,18 @@ inputs:
   credentials-file:
     description: Path to the credentials JSON file
     required: true
+  cache-metrics-action-path:
+    description: >-
+      Absolute path to the `cache-metrics` sub-action directory inside the parent gh-action_cache checkout (typically
+      the parent action's github.action_path joined with `cache-metrics`). When set, the post step recreates the
+      workspace symlink `.actions/cache-metrics` if it has been wiped by a nested actions/checkout
+      `git clean` + `git reset --hard` between the cache-metrics main and post steps. Empty to disable.
+    required: false
+    default: ''
 runs:
   using: node20
   main: dist/main/index.js
+  # Post must run even on prior failure: cache-metrics-post uses `post-if: always()`, so its action.yml needs to be
+  # resolvable on failure too — otherwise the runner emits a hard "Can't find action.yml" error at job end.
   post: dist/post/index.js
-  post-if: success()
+  post-if: always()

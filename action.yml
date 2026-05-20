@@ -72,14 +72,16 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Determine cache backend
+    - name: Determine cache backend and import mode
       id: cache-backend
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
         REPO_VISIBILITY: ${{ github.event.repository.visibility }}
         FORCED_BACKEND: ${{ inputs.backend }}
+        INPUT_IMPORT_GITHUB_CACHE: ${{ inputs.import-github-cache }}
       run: |
+        echo "::group::Resolve backend"
         BACKEND_SOURCE="auto"
         WAS_GITHUB_DEFAULT="false"
         if [[ "$FORCED_BACKEND" == "github" || "$FORCED_BACKEND" == "s3" ]]; then
@@ -105,9 +107,35 @@ runs:
             echo "Using S3 cache for private/internal repository"
           fi
         fi
-        echo "cache-backend=$CACHE_BACKEND" >> "$GITHUB_OUTPUT"
-        echo "backend-source=$BACKEND_SOURCE" >> "$GITHUB_OUTPUT"
-        echo "was-github-default=$WAS_GITHUB_DEFAULT" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"
+
+        echo "::group::Resolve GitHub cache import mode"
+        # Resolution order: input → CACHE_IMPORT_GITHUB env var → true if backend was explicitly forced (migration scenario)
+        #                 → true if public repo switching from GitHub default → false (private/internal, already on S3)
+        if [[ -n "$INPUT_IMPORT_GITHUB_CACHE" ]]; then
+          IMPORT_GITHUB="$INPUT_IMPORT_GITHUB_CACHE"
+          echo "Using import mode from input: $IMPORT_GITHUB"
+        elif [[ -n "${CACHE_IMPORT_GITHUB:-}" ]]; then
+          IMPORT_GITHUB="$CACHE_IMPORT_GITHUB"
+          echo "Using import mode from CACHE_IMPORT_GITHUB environment variable: $IMPORT_GITHUB"
+        elif [[ "$BACKEND_SOURCE" == "forced" ]]; then
+          IMPORT_GITHUB="true"
+          echo "Using default import mode (backend explicitly forced to S3 — migration scenario): $IMPORT_GITHUB"
+        elif [[ "$WAS_GITHUB_DEFAULT" == "true" ]]; then
+          IMPORT_GITHUB="true"
+          echo "Using default import mode (public repository — previously used GitHub cache by default): $IMPORT_GITHUB"
+        else
+          IMPORT_GITHUB="false"
+          echo "Using default import mode (private/internal repository — already on S3): $IMPORT_GITHUB"
+        fi
+        echo "::endgroup::"
+
+        {
+          echo "cache-backend=$CACHE_BACKEND"
+          echo "backend-source=$BACKEND_SOURCE"
+          echo "was-github-default=$WAS_GITHUB_DEFAULT"
+          echo "import-github=$IMPORT_GITHUB"
+        } >> "$GITHUB_OUTPUT"
         echo "ACTION_PATH_CACHE=${{ github.action_path }}" >> "$GITHUB_ENV"
 
     - name: Cache with GitHub Actions (public repos)
@@ -143,35 +171,6 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: $ACTION_PATH_CACHE/scripts/prepare-keys.sh
 
-    - name: Determine GitHub cache import mode
-      if: steps.cache-backend.outputs.cache-backend == 's3'
-      id: import-mode
-      shell: bash
-      env:
-        INPUT_IMPORT_GITHUB_CACHE: ${{ inputs.import-github-cache }}
-        BACKEND_SOURCE: ${{ steps.cache-backend.outputs.backend-source }}
-        WAS_GITHUB_DEFAULT: ${{ steps.cache-backend.outputs.was-github-default }}
-      run: |
-        # Resolution order: input → CACHE_IMPORT_GITHUB env var → true if backend was explicitly forced (migration scenario)
-        #                 → true if public repo switching from GitHub default → false (private/internal, already on S3)
-        if [[ -n "$INPUT_IMPORT_GITHUB_CACHE" ]]; then
-          IMPORT_GITHUB="$INPUT_IMPORT_GITHUB_CACHE"
-          echo "Using import mode from input: $IMPORT_GITHUB"
-        elif [[ -n "${CACHE_IMPORT_GITHUB:-}" ]]; then
-          IMPORT_GITHUB="$CACHE_IMPORT_GITHUB"
-          echo "Using import mode from CACHE_IMPORT_GITHUB environment variable: $IMPORT_GITHUB"
-        elif [[ "$BACKEND_SOURCE" == "forced" ]]; then
-          IMPORT_GITHUB="true"
-          echo "Using default import mode (backend explicitly forced to S3 — migration scenario): $IMPORT_GITHUB"
-        elif [[ "$WAS_GITHUB_DEFAULT" == "true" ]]; then
-          IMPORT_GITHUB="true"
-          echo "Using default import mode (public repository — previously used GitHub cache by default): $IMPORT_GITHUB"
-        else
-          IMPORT_GITHUB="false"
-          echo "Using default import mode (private/internal repository — already on S3): $IMPORT_GITHUB"
-        fi
-        echo "import-github=$IMPORT_GITHUB" >> "$GITHUB_OUTPUT"
-
     - name: Cache on S3
       if: steps.cache-backend.outputs.cache-backend == 's3'
       uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
@@ -195,14 +194,14 @@ runs:
         enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
         # When import mode is active, suppress fail-on-cache-miss here: a subsequent step handles it after also attempting the GitHub cache
         # fallback.
-        fail-on-cache-miss: ${{ steps.import-mode.outputs.import-github == 'true' && 'false' || inputs.fail-on-cache-miss }}
+        fail-on-cache-miss: ${{ steps.cache-backend.outputs.import-github == 'true' && 'false' || inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
 
     - name: Import GitHub cache to S3 (migration fallback)
       if: >-
         steps.cache-backend.outputs.cache-backend == 's3' &&
         steps.s3-cache.outputs.cache-hit != 'true' &&
-        steps.import-mode.outputs.import-github == 'true'
+        steps.cache-backend.outputs.import-github == 'true'
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       id: github-import
       with:
@@ -215,7 +214,7 @@ runs:
     - name: Enforce fail-on-cache-miss after GitHub import fallback
       if: >-
         steps.cache-backend.outputs.cache-backend == 's3' &&
-        steps.import-mode.outputs.import-github == 'true' &&
+        steps.cache-backend.outputs.import-github == 'true' &&
         inputs.fail-on-cache-miss == 'true' &&
         steps.s3-cache.outputs.cache-hit != 'true' &&
         steps.github-import.outputs.cache-matched-key == ''
@@ -246,30 +245,45 @@ runs:
         echo "matched-key=${MATCHED_KEY}" >> "$GITHUB_OUTPUT"
 
     # CI_METRICS_ENABLED is set by the runner pod template / WarpBuild AMI for the BUILD-11068 pilot repos.
+    # Restricted to the S3 backend so credential-guard-post (which only runs on S3) can act as the symlink
+    # keeper that recreates `.actions/cache-metrics` if a nested actions/checkout wiped it before the
+    # cache-metrics post step — see test-s3-cache-survives-git-clean-with-metrics.
+    # The symlink-into-the-workspace pattern is the one documented in SonarSource/ci-github-actions
+    # CONTRIBUTE.md (BUILD-9094) — required so this composite can reference its own `cache-metrics` Node20
+    # sub-action via `uses: ./.actions/cache-metrics` from inside container jobs and nested local actions.
     - name: Prepare local cache-metrics sub-action
       id: cache-metrics-prep
-      if: runner.os == 'Linux' && env.CI_METRICS_ENABLED == 'true'
+      if: >-
+        runner.os == 'Linux' && env.CI_METRICS_ENABLED == 'true' &&
+        steps.cache-backend.outputs.cache-backend == 's3'
       shell: bash
       # Fail-open: the metrics flow must never break the cache flow. The next step's `if:` will skip gracefully if preparation fails.
       run: |
+        echo "::group::Prepare .actions/cache-metrics symlink"
         set +e
+        ACTION_PATH_CACHE="${{ github.action_path }}"
+        echo "github.action_path=$ACTION_PATH_CACHE"
         mkdir -p .actions
         ln -sf "$ACTION_PATH_CACHE/cache-metrics" .actions/cache-metrics
+        ls -la .actions/*
         if [ ! -e .actions/cache-metrics/action.yml ]; then
           echo "::warning::cache-metrics: could not prepare .actions/cache-metrics symlink — skipping metrics."
           echo "prepared=false" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
           exit 0
         fi
-        # `git add -f` stages the symlink so `git clean -ffdx` (used by actions/checkout with default `clean: true`) does not remove it
-        # between main and post steps.
+        # `git add -f` is best-effort: it survives a bare `git clean -ffdx`, but not the subsequent
+        # `git reset --hard HEAD` + `git checkout --force <ref>` that actions/checkout runs. The real
+        # safety net is credential-guard-post's symlink keeper (see action.yml `Credential guard` step).
         if ! git add -f .actions 2>/dev/null; then
           echo "::warning::cache-metrics: could not 'git add' the .actions symlink."
         fi
         echo "prepared=true" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"
         exit 0
 
     - name: Emit cache metrics (size + saved)
-      if: runner.os == 'Linux' && steps.cache-metrics-prep.outputs.prepared == 'true'
+      if: steps.cache-metrics-prep.outputs.prepared == 'true'
       id: cache-metrics
       uses: ./.actions/cache-metrics
       with:
@@ -286,6 +300,10 @@ runs:
       uses: SonarSource/gh-action_cache/credential-guard@v1
       with:
         credentials-file: ${{ steps.aws-auth.outputs.credentials-file }}
+        # Pass our action path so credential-guard-post can recreate the workspace symlink to cache-metrics
+        # if a nested actions/checkout (clean → reset --hard → checkout --force) wiped it from the workspace.
+        # Empty when metrics are disabled — the post step is a no-op then.
+        cache-metrics-action-path: ${{ steps.cache-metrics-prep.outputs.prepared == 'true' && format('{0}/cache-metrics', github.action_path) || '' }}
 
 branding:
   icon: upload-cloud

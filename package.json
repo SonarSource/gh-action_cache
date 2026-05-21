@@ -4,12 +4,14 @@
   "private": true,
   "description": "S3 Cache action with credential isolation",
   "scripts": {
-    "build": "npm run build:setup && npm run build:guard-main && npm run build:guard-post && npm run build:metrics-main && npm run build:metrics-post",
+    "build": "npm run build:setup && npm run build:guard-main && npm run build:guard-post && npm run build:metrics-main && npm run build:metrics-post && npm run build:s3-save-main && npm run build:s3-save-post",
     "build:setup": "ncc build src/credential-setup.ts -o credential-setup/dist --license licenses.txt",
     "build:guard-main": "ncc build src/credential-guard-main.ts -o credential-guard/dist/main --license licenses.txt",
     "build:guard-post": "ncc build src/credential-guard-post.ts -o credential-guard/dist/post --license licenses.txt",
     "build:metrics-main": "ncc build src/cache-metrics-main.ts -o cache-metrics/dist/main --license licenses.txt",
     "build:metrics-post": "ncc build src/cache-metrics-post.ts -o cache-metrics/dist/post --license licenses.txt",
+    "build:s3-save-main": "ncc build src/s3-cache-save-main.ts -o s3-cache-save/dist/main --license licenses.txt",
+    "build:s3-save-post": "ncc build src/s3-cache-save-post.ts -o s3-cache-save/dist/post --license licenses.txt",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -20,7 +22,13 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@actions/cache": "^4.1.0",
     "@actions/core": "^1.11.1",
-    "@aws-sdk/client-cognito-identity": "^3.750.0"
+    "@actions/exec": "^1.1.1",
+    "@actions/io": "^1.1.3",
+    "@aws-sdk/client-cognito-identity": "^3.750.0",
+    "@aws-sdk/client-s3": "^3.511.0",
+    "@aws-sdk/lib-storage": "^3.513.0",
+    "@aws-sdk/s3-request-presigner": "^3.513.0"
   }
 }

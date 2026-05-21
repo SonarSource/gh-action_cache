@@ -171,9 +171,9 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: $ACTION_PATH_CACHE/scripts/prepare-keys.sh
 
-    - name: Cache on S3
+    - name: Restore cache from S3
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
+      uses: runs-on/cache/restore@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
       id: s3-cache
       env:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
@@ -251,6 +251,26 @@ runs:
     # The symlink-into-the-workspace pattern is the one documented in SonarSource/ci-github-actions
     # CONTRIBUTE.md (BUILD-9094) — required so this composite can reference its own `cache-metrics` Node20
     # sub-action via `uses: ./.actions/cache-metrics` from inside container jobs and nested local actions.
+    - name: Register S3 cache save (post-step)
+      if: steps.cache-backend.outputs.cache-backend == 's3'
+      uses: ./s3-cache-save
+      env:
+        RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
+        AWS_DEFAULT_REGION: eu-central-1
+        AWS_REGION: eu-central-1
+        AWS_ACCESS_KEY_ID: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
+        AWS_PROFILE: ''
+        AWS_DEFAULT_PROFILE: ''
+        CACHE_USER_KEY_SUFFIX: ${{ inputs.key }}
+      with:
+        cache-primary-key: ${{ steps.prepare-keys.outputs.branch-key }}
+        cache-matched-key: ${{ steps.cache-outputs.outputs.matched-key }}
+        path: ${{ inputs.path }}
+        upload-chunk-size: ${{ inputs.upload-chunk-size }}
+        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
+
     - name: Prepare local cache-metrics sub-action
       id: cache-metrics-prep
       if: >-
@@ -289,6 +309,7 @@ runs:
       with:
         path: ${{ inputs.path }}
         key: ${{ inputs.key }}
+        cache-primary-key: ${{ steps.prepare-keys.outputs.branch-key }}
         cache-hit: ${{ steps.cache-outputs.outputs.cache-hit }}
         matched-key: ${{ steps.cache-outputs.outputs.matched-key }}
         backend: ${{ steps.cache-backend.outputs.cache-backend }}

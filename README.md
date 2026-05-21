@@ -242,7 +242,7 @@ Field semantics:
 | `restore-key-hit`     | When `cache-hit` is `false` AND a prefix-matched restore key was found, the matched restore key. `null` otherwise (exact hit, no match, or lookup-only).                                                                                        |
 | `size-bytes-restored` | Size of the cache content at restore-time. `0` on a full miss with no partial hit.                                                                                                                                                              |
 | `size-bytes-at-end`   | Size of the path at job end (measured in the post step, before the cache save runs). Reflects what *would* be saved when `saved` is true. When `saved` is false, this value still reports the path size at end-of-job but nothing is persisted. |
-| `saved`               | `true` if the cache action actually persists the cache. `false` when `cache-hit` was true (cache action skips save on exact match) or when `lookup-only` was set.                                                                               |
+| `saved`               | `true` if the cache action actually persists the cache. `false` when `cache-hit` was true (exact match), when fallback restore reused the same `key` suffix (duplicate-content skip), or when `lookup-only` was set.                          |
 
 The metrics step fails open — if measurement fails for any reason, the cache flow continues unaffected.
 
@@ -254,6 +254,7 @@ A GitHub Action that provides branch-specific caching on AWS S3 with intelligent
 
 - **Branch-specific caching**: Cache entries are prefixed with `GITHUB_HEAD_REF` for granular permissions
 - **Intelligent fallback**: Feature branches can fall back to default branch cache when no branch-specific cache exists
+- **Duplicate save skip**: When a fallback restore returns the same content hash as the primary key (unchanged `key` suffix), the post-step save is skipped to avoid redundant S3 uploads
 - **S3 storage**: Leverages AWS S3 for reliable, scalable cache storage
 - **AWS Cognito authentication**: Secure authentication using GitHub Actions OIDC tokens
 - **Compatible with actions/cache**: Drop-in replacement with same interface
@@ -317,6 +318,7 @@ To disable the automatic default branch fallback:
   when no branch-specific entry exists
 - **Dynamic default branch detection**: The action detects your default branch using the GitHub API and uses it for fallback
 - **Branch isolation**: Each branch maintains its own cache namespace, preventing cross-branch cache pollution
+- **No redundant saves after fallback restore**: If cache is restored from e.g. `refs/heads/master/gradle-<hash>` on a feature branch whose primary key is `feature/gradle-<hash>` and build outputs are unchanged, the action skips uploading the same archive again under the branch prefix
 
 ### Environment Configuration
 

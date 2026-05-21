@@ -7,6 +7,10 @@ inputs:
   key:
     description: Primary cache key
     required: true
+  cache-primary-key:
+    description: Branch-scoped primary cache key (S3 backend only; used to detect duplicate-content save skip)
+    required: false
+    default: ''
   cache-hit:
     description: Whether the primary key matched an existing cache entry
     required: false

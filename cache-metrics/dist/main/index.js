@@ -25723,6 +25723,9 @@ async function run() {
         core.saveState('path', inputs.path);
         core.saveState('cacheHit', inputs.cacheHit ? 'true' : 'false');
         core.saveState('lookupOnly', inputs.lookupOnly ? 'true' : 'false');
+        core.saveState('cacheUserKey', inputs.key);
+        core.saveState('cachePrimaryKey', inputs.cachePrimaryKey ?? '');
+        core.saveState('cacheMatchedKey', inputs.matchedKey ?? '');
         core.info(`cache-metrics: restored size = ${sizeBytes} B, metrics written to ${file}`);
     }
     catch (error) {
@@ -25874,6 +25877,7 @@ function readInputs() {
     return {
         path: core.getInput('path', { required: true }),
         key: core.getInput('key', { required: true }),
+        cachePrimaryKey: core.getInput('cache-primary-key'),
         cacheHit: core.getInput('cache-hit').toLowerCase() === 'true',
         matchedKey: core.getInput('matched-key'),
         backend: core.getInput('backend', { required: true }),

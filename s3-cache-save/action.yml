@@ -1,0 +1,25 @@
+name: S3 Cache Save
+description: Internal action — saves S3 cache in post-step with duplicate-content skip logic
+inputs:
+  cache-primary-key:
+    description: Branch-scoped primary cache key used for save
+    required: true
+  cache-matched-key:
+    description: Key the restore step matched (empty when restore missed)
+    required: false
+    default: ''
+  path:
+    description: Paths to cache (same as restore)
+    required: true
+  upload-chunk-size:
+    description: Chunk size for multipart upload
+    required: false
+  enableCrossOsArchive:
+    description: Enable cross-OS archive compatibility
+    default: 'false'
+    required: false
+runs:
+  using: node20
+  main: dist/main/index.js
+  post: dist/post/index.js
+  post-if: success()

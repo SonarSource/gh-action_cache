@@ -11,11 +11,11 @@ repos:
     hooks:
       # ncc-bundled sub-actions live in <sub-action>/dist/ and we don't control their formatting.
       - id: trailing-whitespace
-        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/)
+        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/|s3-cache-save/dist/)
       - id: end-of-file-fixer
-        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/)
+        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/|s3-cache-save/dist/)
       - id: check-added-large-files
-        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/)
+        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/|s3-cache-save/dist/)
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.48.0
     hooks:

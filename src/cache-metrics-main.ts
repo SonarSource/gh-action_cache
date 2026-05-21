@@ -52,6 +52,9 @@ export async function run(): Promise<void> {
     core.saveState('path', inputs.path);
     core.saveState('cacheHit', inputs.cacheHit ? 'true' : 'false');
     core.saveState('lookupOnly', inputs.lookupOnly ? 'true' : 'false');
+    core.saveState('cacheUserKey', inputs.key);
+    core.saveState('cachePrimaryKey', inputs.cachePrimaryKey ?? '');
+    core.saveState('cacheMatchedKey', inputs.matchedKey ?? '');
 
     core.info(
       `cache-metrics: restored size = ${sizeBytes} B, metrics written to ${file}`

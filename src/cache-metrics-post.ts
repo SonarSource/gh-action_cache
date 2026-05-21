@@ -1,4 +1,5 @@
 import * as core from '@actions/core';
+import { shouldSkipDuplicateCacheSave } from './cache-save-skip';
 import {
   CacheMetricsRecord,
   measureCacheBytes,
@@ -21,10 +22,19 @@ export async function run(): Promise<void> {
     const pathInput = core.getState('path');
     const cacheHit = core.getState('cacheHit') === 'true';
     const lookupOnly = core.getState('lookupOnly') === 'true';
+    const cacheUserKey = core.getState('cacheUserKey') ?? '';
+    const cachePrimaryKey = core.getState('cachePrimaryKey') ?? '';
+    const cacheMatchedKey = core.getState('cacheMatchedKey') ?? '';
 
     const sizeBytes = measureCacheBytes(pathInput);
-    // The cache action skips save when it found an exact-match hit, or when in lookup-only mode.
-    const saved = !lookupOnly && !cacheHit;
+    const skipDuplicateSave = shouldSkipDuplicateCacheSave(
+      cacheHit,
+      cachePrimaryKey,
+      cacheMatchedKey,
+      cacheUserKey
+    );
+    // The cache action skips save on exact hit, lookup-only, or unchanged content after fallback restore.
+    const saved = !lookupOnly && !cacheHit && !skipDuplicateSave;
 
     const prior = readMetricsFile(metricsFile);
     const record: CacheMetricsRecord = {

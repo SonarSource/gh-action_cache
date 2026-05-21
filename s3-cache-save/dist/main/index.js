@@ -25643,7 +25643,46 @@ module.exports = {
 
 /***/ }),
 
-/***/ 9112:
+/***/ 5662:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.RefKey = exports.Events = exports.State = exports.Outputs = exports.Inputs = void 0;
+var Inputs;
+(function (Inputs) {
+    Inputs["Key"] = "key";
+    Inputs["Path"] = "path";
+    Inputs["RestoreKeys"] = "restore-keys";
+    Inputs["UploadChunkSize"] = "upload-chunk-size";
+    Inputs["EnableCrossOsArchive"] = "enableCrossOsArchive";
+    Inputs["FailOnCacheMiss"] = "fail-on-cache-miss";
+    Inputs["LookupOnly"] = "lookup-only"; // Input for cache, restore action
+})(Inputs || (exports.Inputs = Inputs = {}));
+var Outputs;
+(function (Outputs) {
+    Outputs["CacheHit"] = "cache-hit";
+    Outputs["CachePrimaryKey"] = "cache-primary-key";
+    Outputs["CacheMatchedKey"] = "cache-matched-key"; // Output from restore action
+})(Outputs || (exports.Outputs = Outputs = {}));
+var State;
+(function (State) {
+    State["CachePrimaryKey"] = "CACHE_KEY";
+    State["CacheMatchedKey"] = "CACHE_RESULT";
+})(State || (exports.State = State = {}));
+var Events;
+(function (Events) {
+    Events["Key"] = "GITHUB_EVENT_NAME";
+    Events["Push"] = "push";
+    Events["PullRequest"] = "pull_request";
+})(Events || (exports.Events = Events = {}));
+exports.RefKey = "GITHUB_REF";
+
+
+/***/ }),
+
+/***/ 1750:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -25684,229 +25723,23 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
-const cache_save_skip_1 = __nccwpck_require__(6675);
-const cache_metrics_1 = __nccwpck_require__(5945);
+const constants_1 = __nccwpck_require__(5662);
+/**
+ * Seeds GITHUB_STATE for the post-step save so it can apply the same skip rules as
+ * actions/cache without requiring a bundled restore+save action instance.
+ */
 async function run() {
-    try {
-        if (process.platform !== 'linux') {
-            return;
-        }
-        const metricsFile = core.getState('metricsFile');
-        if (!metricsFile) {
-            core.info('cache-metrics: no state from main step — skipping post-measurement');
-            return;
-        }
-        const pathInput = core.getState('path');
-        const cacheHit = core.getState('cacheHit') === 'true';
-        const lookupOnly = core.getState('lookupOnly') === 'true';
-        const cacheUserKey = core.getState('cacheUserKey') ?? '';
-        const cachePrimaryKey = core.getState('cachePrimaryKey') ?? '';
-        const cacheMatchedKey = core.getState('cacheMatchedKey') ?? '';
-        const sizeBytes = (0, cache_metrics_1.measureCacheBytes)(pathInput);
-        const skipDuplicateSave = (0, cache_save_skip_1.shouldSkipDuplicateCacheSave)(cacheHit, cachePrimaryKey, cacheMatchedKey, cacheUserKey);
-        // The cache action skips save on exact hit, lookup-only, or unchanged content after fallback restore.
-        const saved = !lookupOnly && !cacheHit && !skipDuplicateSave;
-        const prior = (0, cache_metrics_1.readMetricsFile)(metricsFile);
-        const record = {
-            step: prior.step ?? 'cache',
-            key: prior.key ?? '',
-            'restore-key-hit': prior['restore-key-hit'] ?? null,
-            backend: prior.backend ?? 'unknown',
-            'cache-hit': prior['cache-hit'] ?? cacheHit,
-            'size-bytes-restored': prior['size-bytes-restored'] ?? null,
-            'size-bytes-at-end': sizeBytes,
-            saved,
-            'timestamp-restored': prior['timestamp-restored'] ?? null,
-            'timestamp-at-end': new Date().toISOString(),
-        };
-        (0, cache_metrics_1.writeMetricsFile)(metricsFile, record);
-        core.info(`cache-metrics: saved size = ${sizeBytes} B, saved=${saved}, updated ${metricsFile}`);
+    const cachePrimaryKey = core.getInput('cache-primary-key', { required: true });
+    const cacheMatchedKey = core.getInput('cache-matched-key');
+    core.saveState(constants_1.State.CachePrimaryKey, cachePrimaryKey);
+    if (cacheMatchedKey) {
+        core.saveState(constants_1.State.CacheMatchedKey, cacheMatchedKey);
     }
-    catch (error) {
-        // Fail-open: metrics issues must never break the cache flow.
-        core.warning(`cache-metrics (post) failed: ${error instanceof Error ? error.message : error}`);
-    }
+    core.info('S3 cache save registered for post-step');
 }
 /* istanbul ignore next */
 if (!process.env.VITEST) {
     run();
-}
-
-
-/***/ }),
-
-/***/ 5945:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DEFAULT_METRICS_DIR = void 0;
-exports.slugifyStepId = slugifyStepId;
-exports.measureCacheBytes = measureCacheBytes;
-exports.metricsFilePath = metricsFilePath;
-exports.readMetricsFile = readMetricsFile;
-exports.writeMetricsFile = writeMetricsFile;
-exports.readInputs = readInputs;
-const core = __importStar(__nccwpck_require__(7484));
-const node_child_process_1 = __nccwpck_require__(1421);
-const fs = __importStar(__nccwpck_require__(3024));
-const path = __importStar(__nccwpck_require__(6760));
-/**
- * Slugify a step id for safe filesystem use. Falls back to `cache` if empty.
- */
-function slugifyStepId(stepId) {
-    const slug = (stepId ?? '')
-        .replace(/[^a-zA-Z0-9_-]+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-    return slug || 'cache';
-}
-/**
- * Sum the total size in bytes of the given cache paths.
- *
- * Each input line may contain `~` and shell globs; expansion is delegated to `bash -c`, which also handles missing entries gracefully
- * (silently skipped).
- *
- * Returns 0 when no paths match anything on disk.
- */
-// All `$...` references below are Bash variable expansions, NOT JS template-literal interpolations.
-// The string is passed verbatim to `bash -c`.
-//
-// `inputs.path` is workflow-author input, but we still avoid `eval` on it to keep the attack surface minimal: word-splitting + glob
-// expansion happen natively when `$line` is used unquoted in a `for ... in` loop, with `nullglob`/`globstar` handling missing matches.
-const MEASURE_SCRIPT = [
-    'set -uo pipefail',
-    'shopt -s nullglob globstar',
-    'total=0',
-    'while IFS= read -r line || [ -n "$line" ]; do',
-    '  [ -z "$line" ] && continue',
-    '  # Expand a leading `~` to $HOME (bash only does tilde expansion on literals,',
-    '  # not on values substituted from a variable).',
-    '  line="${line/#~/$HOME}"',
-    '  for p in $line; do',
-    '    if [ -e "$p" ]; then',
-    '      sz=$(du -sb -- "$p" 2>/dev/null | awk \'{print $1}\')',
-    '      total=$((total + ${sz:-0}))',
-    '    fi',
-    '  done',
-    'done',
-    'echo "$total"',
-].join('\n');
-function measureCacheBytes(pathInput) {
-    if (!pathInput.trim())
-        return 0;
-    try {
-        const out = (0, node_child_process_1.execFileSync)('/bin/bash', ['-c', MEASURE_SCRIPT], {
-            input: pathInput,
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe'],
-        });
-        const n = Number.parseInt(out.trim(), 10);
-        return Number.isFinite(n) && n >= 0 ? n : 0;
-    }
-    catch (err) {
-        core.warning(`cache-metrics: du failed: ${err instanceof Error ? err.message : err}`);
-        return 0;
-    }
-}
-/**
- * Compose the metrics filename from a directory and an already-slugified step id.
- * Callers must pass the slug (run `slugifyStepId` first); avoids double slugification.
- */
-function metricsFilePath(metricsDir, slug) {
-    return path.join(metricsDir, `cache-${slug}.json`);
-}
-function readMetricsFile(file) {
-    try {
-        const raw = fs.readFileSync(file, 'utf-8');
-        return JSON.parse(raw);
-    }
-    catch {
-        return {};
-    }
-}
-function writeMetricsFile(file, record) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(record, null, 2) + '\n', 'utf-8');
-}
-// Assembled at runtime to keep the SonarRule S5443 ("temp files in publicly writable directories") false positive away from a
-// single literal — the path itself is part of the contract with the runner (BUILD-11293 pre-creates it with the right
-// permissions) and with the M1.3 hook, so it cannot be parameterised away.
-exports.DEFAULT_METRICS_DIR = path.posix.join('/tmp', 'ci-metrics');
-function readInputs() {
-    return {
-        path: core.getInput('path', { required: true }),
-        key: core.getInput('key', { required: true }),
-        cachePrimaryKey: core.getInput('cache-primary-key'),
-        cacheHit: core.getInput('cache-hit').toLowerCase() === 'true',
-        matchedKey: core.getInput('matched-key'),
-        backend: core.getInput('backend', { required: true }),
-        lookupOnly: core.getInput('lookup-only').toLowerCase() === 'true',
-        stepId: core.getInput('step-id', { required: true }),
-        // Output dir is provided by the runner (ARC pod template / WarpBuild AMI)
-        // via the CI_METRICS_DIR env var. Default keeps the action usable on any
-        // runner without that env preset.
-        metricsDir: process.env.CI_METRICS_DIR || exports.DEFAULT_METRICS_DIR,
-    };
-}
-
-
-/***/ }),
-
-/***/ 6675:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.shouldSkipDuplicateCacheSave = shouldSkipDuplicateCacheSave;
-/**
- * Detects when cache save should be skipped because restore used a fallback key
- * but the user key suffix (typically a content hash) is unchanged.
- */
-function shouldSkipDuplicateCacheSave(cacheHit, cachePrimaryKey, cacheMatchedKey, cacheUserKey) {
-    if (cacheHit || !cacheMatchedKey || !cachePrimaryKey || !cacheUserKey) {
-        return false;
-    }
-    if (cacheMatchedKey === cachePrimaryKey) {
-        return false;
-    }
-    const suffix = `/${cacheUserKey}`;
-    return (cacheMatchedKey.endsWith(suffix) && cachePrimaryKey.endsWith(suffix));
 }
 
 
@@ -26016,14 +25849,6 @@ module.exports = require("net");
 
 /***/ }),
 
-/***/ 1421:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:child_process");
-
-/***/ }),
-
 /***/ 7598:
 /***/ ((module) => {
 
@@ -26037,22 +25862,6 @@ module.exports = require("node:crypto");
 
 "use strict";
 module.exports = require("node:events");
-
-/***/ }),
-
-/***/ 3024:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:fs");
-
-/***/ }),
-
-/***/ 6760:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:path");
 
 /***/ }),
 
@@ -27851,7 +27660,7 @@ module.exports = parseParams
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
 /******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(9112);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(1750);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()

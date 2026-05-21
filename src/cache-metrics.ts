@@ -6,6 +6,7 @@ import * as path from 'node:path';
 export interface CacheMetricsInputs {
   path: string;
   key: string;
+  cachePrimaryKey: string;
   cacheHit: boolean;
   matchedKey: string;
   backend: string;
@@ -132,6 +133,7 @@ export function readInputs(): CacheMetricsInputs {
   return {
     path: core.getInput('path', { required: true }),
     key: core.getInput('key', { required: true }),
+    cachePrimaryKey: core.getInput('cache-primary-key'),
     cacheHit: core.getInput('cache-hit').toLowerCase() === 'true',
     matchedKey: core.getInput('matched-key'),
     backend: core.getInput('backend', { required: true }),

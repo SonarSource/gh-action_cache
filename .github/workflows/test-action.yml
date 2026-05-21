@@ -425,6 +425,115 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
+  # File-only path: metrics on when ${CI_METRICS_DIR}/enabled exists, even with no `env.CI_METRICS_ENABLED`.
+  # Simulates a runner whose pre-job hook (github-runners-infra/hooks/job-started.sh) wrote the decision file.
+  test-cache-metrics-via-decision-file:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    # No CI_METRICS_ENABLED env on purpose — the gate must enable via the file alone.
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          version: 2025.7.12
+
+      - name: Simulate runner pre-job decision file
+        run: |
+          mkdir -p /tmp/ci-metrics
+          : > /tmp/ci-metrics/enabled
+          ls -la /tmp/ci-metrics
+
+      - name: Cache pip with S3 (file-only gate)
+        id: cache-file-gate
+        uses: ./
+        with:
+          path: ~/.cache/pip
+          key: file-gate-test-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: file-gate-test-${{ runner.os }}-
+          environment: dev
+          backend: s3
+
+      - name: Verify metrics ran (cache-size-bytes output is set)
+        run: |
+          if [[ -z "${{ steps.cache-file-gate.outputs.cache-size-bytes }}" ]]; then
+            echo "::error::cache-size-bytes output was empty — gate did not honour the decision file"
+            exit 1
+          fi
+          echo "cache-size-bytes = ${{ steps.cache-file-gate.outputs.cache-size-bytes }}"
+
+      - name: Verify ${CI_METRICS_DIR}/cache-*.json was written
+        run: |
+          shopt -s nullglob
+          files=(/tmp/ci-metrics/cache-*.json)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error::no cache-*.json under /tmp/ci-metrics/ — file-gate path did not emit metrics"
+            ls -la /tmp/ci-metrics/ || true
+            exit 1
+          fi
+
+      - name: Populate cache path so the post-step measures a saved size
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+  # Workflow opt-out beats the decision file. Pre-touches the file (as the runner pre-job hook would),
+  # then sets CI_METRICS_ENABLED='false' at the job level. Metrics MUST NOT run, no cache-*.json written.
+  test-cache-metrics-workflow-false-beats-file:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      CI_METRICS_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          version: 2025.7.12
+
+      - name: Simulate runner pre-job decision file (will be overridden by workflow env)
+        run: |
+          mkdir -p /tmp/ci-metrics
+          : > /tmp/ci-metrics/enabled
+          ls -la /tmp/ci-metrics
+
+      - name: Cache pip with S3 (workflow opt-out)
+        id: cache-workflow-false
+        uses: ./
+        with:
+          path: ~/.cache/pip
+          key: workflow-false-test-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: workflow-false-test-${{ runner.os }}-
+          environment: dev
+          backend: s3
+
+      - name: Verify metrics did NOT run (cache-size-bytes empty, no cache-*.json)
+        run: |
+          if [[ -n "${{ steps.cache-workflow-false.outputs.cache-size-bytes }}" ]]; then
+            echo "::error::cache-size-bytes was '${{ steps.cache-workflow-false.outputs.cache-size-bytes }}' — workflow CI_METRICS_ENABLED=false did NOT win over the decision file"
+            exit 1
+          fi
+          shopt -s nullglob
+          files=(/tmp/ci-metrics/cache-*.json)
+          if (( ${#files[@]} > 0 )); then
+            echo "::error::cache-*.json files present — workflow CI_METRICS_ENABLED=false did NOT skip the cache-metrics sub-action"
+            ls -la /tmp/ci-metrics/
+            exit 1
+          fi
+          # The propagator step should have removed the pre-existing enabled file.
+          if [[ -e /tmp/ci-metrics/enabled ]]; then
+            echo "::error::/tmp/ci-metrics/enabled still exists — toggle step did not honour CI_METRICS_ENABLED=false"
+            exit 1
+          fi
+          echo "ok: gate correctly disabled via workflow opt-out"
+
+      - name: Populate cache path so the post-step has something to save
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
   all-green:
     name: All Tests
     if: always()
@@ -439,6 +548,8 @@ jobs:
       - test-s3-cache-survives-git-clean
       - test-s3-cache-survives-git-clean-with-metrics
       - test-cache-metrics-output
+      - test-cache-metrics-via-decision-file
+      - test-cache-metrics-workflow-false-beats-file
     runs-on: github-ubuntu-latest-s
     steps:
       - name: Decide whether the needed jobs succeeded or failed

@@ -66,8 +66,8 @@ These must be committed since GitHub Actions runs them directly.
 |-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `CACHE_BACKEND`       | Force specific backend: `github` or `s3` (overrides auto-detection).                                                                                                                                       |
 | `CACHE_IMPORT_GITHUB` | Disable GitHub cache fallback for S3 backend (migration mode) when set to `false`.                                                                                                                         |
-| `CI_METRICS_ENABLED`  | Opt-in feature flag for pipeline runtime metrics (Linux only). Set to `true` to enable emission of the `cache-size-bytes` output and the per-invocation JSON record at `${CI_METRICS_DIR}/cache-*.json`.   |
-| `CI_METRICS_DIR`      | Output directory for the per-invocation metrics JSON (only consulted when `CI_METRICS_ENABLED=true`). Provided by the ARC pod template / WarpBuild AMI; defaults to `/tmp/ci-metrics` when unset or empty. |
+| `CI_METRICS_ENABLED`  | Workflow-level override for the pipeline-runtime-metrics gate (Linux only). `'true'` forces metrics on, `'false'` forces metrics off; unset honours the runner-side decision file (see below).             |
+| `CI_METRICS_DIR`      | Directory holding the runner-side decision file (`enabled`) and the per-invocation cache JSON. Provided by the ARC pod template / WarpBuild AMI; defaults to `/tmp/ci-metrics` when unset or empty.        |
 
 ## Inputs
 
@@ -189,14 +189,26 @@ gh variable set CACHE_IMPORT_GITHUB --body "true"
 
 ### Pipeline runtime metrics
 
-On Linux runners — and only when `CI_METRICS_ENABLED` is set to `true` — the action writes a per-invocation JSON record to
+On Linux runners — and only when the layered gate below resolves to "on" — the action writes a per-invocation JSON record to
 `${CI_METRICS_DIR}/cache-${step}.json` for the [pipeline runtime metrics](https://sonarsource.atlassian.net/browse/BUILD-11068)
 `job-completed.sh` hook to ingest. The output directory is taken from the `CI_METRICS_DIR` environment variable (provided by the
 ARC pod template / WarpBuild AMI); it falls back to `/tmp/ci-metrics` when the variable is unset or empty.
 The record captures both the restore-time size and the pre-save size, plus whether the cache was actually saved.
 
-When `CI_METRICS_ENABLED` is unset or set to anything other than `true`, the cache flow runs exactly as before — no metrics steps, no JSON
-file, and `cache-size-bytes` is empty. The other outputs (`cache-hit`, `cache-matched-key`, `restore-key-hit`, `backend`) are unaffected.
+**Gate resolution** ([BUILD-11295](https://sonarsource.atlassian.net/browse/BUILD-11295)):
+
+1. Workflow `env: { CI_METRICS_ENABLED: 'false' }` → off (beats everything).
+2. Workflow `env: { CI_METRICS_ENABLED: 'true' }` → on (beats the runner-side allow/deny).
+3. Otherwise, on iff `${CI_METRICS_DIR}/enabled` exists. This file is written at job start by the runner pre-job hook
+   (`github-runners-infra/hooks/job-started.sh`) based on the per-env, per-repo, per-workflow allow/deny lists. On runners outside
+   SonarSource's ARC pool (GitHub-hosted, WarpBuild), the file is absent unless a workflow setup step touches it explicitly.
+
+When the gate resolves to "off", the cache flow runs exactly as before — no metrics steps, no JSON file, and `cache-size-bytes`
+is empty. The other outputs (`cache-hit`, `cache-matched-key`, `restore-key-hit`, `backend`) are unaffected.
+
+The action also propagates the workflow `CI_METRICS_ENABLED` override to the same file (touch on `'true'`, remove on `'false'`)
+so the post-job `job-completed.sh` hook sees the same decision the cache action did. Workflows that don't use this action and
+still want to override can add the equivalent 4-line setup step (`case ... touch/rm $CI_METRICS_DIR/enabled`).
 
 **Example — partial restore-key hit (primary missed, prefix-matched older entry restored, then re-saved under primary key):**
 

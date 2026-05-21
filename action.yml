@@ -244,17 +244,48 @@ runs:
         echo "cache-hit=${CACHE_HIT}" >> "$GITHUB_OUTPUT"
         echo "matched-key=${MATCHED_KEY}" >> "$GITHUB_OUTPUT"
 
-    # CI_METRICS_ENABLED is set by the runner pod template / WarpBuild AMI for the BUILD-11068 pilot repos.
-    # Restricted to the S3 backend so credential-guard-post (which only runs on S3) can act as the symlink
-    # keeper that recreates `.actions/cache-metrics` if a nested actions/checkout wiped it before the
-    # cache-metrics post step — see test-s3-cache-survives-git-clean-with-metrics.
-    # The symlink-into-the-workspace pattern is the one documented in SonarSource/ci-github-actions
-    # CONTRIBUTE.md (BUILD-9094) — required so this composite can reference its own `cache-metrics` Node20
-    # sub-action via `uses: ./.actions/cache-metrics` from inside container jobs and nested local actions.
+    # CI-metrics gating.
+    # The single source of truth is the presence-only file ${CI_METRICS_DIR}/enabled written by the runner's pre-job hook.
+    # Workflow-level `env: { CI_METRICS_ENABLED: 'true'|'false' }` always wins.
+    # The step also mutates the file in the workflow-env override cases so the runner's post-job hook follows.
+    - name: Resolve CI metrics gate
+      id: ci-metrics-gate
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        echo "::group::CI metrics gate"
+        CI_METRICS_DIR="${CI_METRICS_DIR:-/tmp/ci-metrics}"
+        case "${CI_METRICS_ENABLED:-}" in
+          true)
+            mkdir -p "$CI_METRICS_DIR"
+            : > "$CI_METRICS_DIR/enabled"
+            decision=true
+            reason="Metrics enabled: workflow-env-true (touched $CI_METRICS_DIR/enabled for post-job hook)"
+            ;;
+          false)
+            rm -f "$CI_METRICS_DIR/enabled"
+            decision=false
+            reason="Metrics disabled: workflow-env-false (removed $CI_METRICS_DIR/enabled)"
+            ;;
+          *)
+            if [[ -e "$CI_METRICS_DIR/enabled" ]]; then
+                decision=true
+                reason="Metrics enabled: runner-side decision file present at $CI_METRICS_DIR/enabled"
+            else
+                decision=false
+                reason="Metrics disabled: no signal (CI_METRICS_ENABLED unset and $CI_METRICS_DIR/enabled absent)"
+            fi
+            ;;
+        esac
+        echo "$reason"
+        echo "decision=$decision" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"
+
+    # S3 restriction: credential-guard only runs on S3 and embeds the symlink keeper (BUILD-11417)
     - name: Prepare local cache-metrics sub-action
       id: cache-metrics-prep
       if: >-
-        runner.os == 'Linux' && env.CI_METRICS_ENABLED == 'true' &&
+        steps.ci-metrics-gate.outputs.decision == 'true' &&
         steps.cache-backend.outputs.cache-backend == 's3'
       shell: bash
       # Fail-open: the metrics flow must never break the cache flow. The next step's `if:` will skip gracefully if preparation fails.

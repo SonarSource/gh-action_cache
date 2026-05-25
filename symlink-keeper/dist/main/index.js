@@ -31025,7 +31025,7 @@ module.exports = {
 
 /***/ }),
 
-/***/ 1321:
+/***/ 6057:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -31064,71 +31064,14 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getAwsDir = getAwsDir;
-exports.writeAwsCredentialsFile = writeAwsCredentialsFile;
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
-const fs = __importStar(__nccwpck_require__(1943));
-const os = __importStar(__nccwpck_require__(857));
-const path = __importStar(__nccwpck_require__(6928));
-const AWS_REGION = 'eu-central-1';
-function getAwsDir() {
-    return path.join(process.env.__TEST_AWS_HOME || os.homedir(), '.aws');
-}
-async function writeAwsCredentialsFile(creds) {
-    const awsDir = getAwsDir();
-    await fs.mkdir(awsDir, { recursive: true, mode: 0o700 });
-    const credentialsContent = [
-        '[default]',
-        `aws_access_key_id = ${creds.AccessKeyId}`,
-        `aws_secret_access_key = ${creds.SecretAccessKey}`,
-        `aws_session_token = ${creds.SessionToken}`,
-        '',
-    ].join('\n');
-    const configContent = ['[default]', `region = ${AWS_REGION}`, ''].join('\n');
-    await fs.writeFile(path.join(awsDir, 'credentials'), credentialsContent, {
-        mode: 0o600,
-    });
-    await fs.writeFile(path.join(awsDir, 'config'), configContent, {
-        mode: 0o600,
-    });
-    core.info('Wrote credentials to ~/.aws/credentials [default] profile (fallback for nested composites)');
-}
 async function run() {
-    const credentialsFile = core.getState('credentials-file');
-    if (!credentialsFile) {
-        core.warning('No credentials file path in state — skipping credential restore');
-        return;
+    const cacheMetricsActionPath = core.getInput('cache-metrics-action-path');
+    if (cacheMetricsActionPath) {
+        core.saveState('cache-metrics-action-path', cacheMetricsActionPath);
     }
-    try {
-        const content = await fs.readFile(credentialsFile, 'utf-8');
-        const creds = JSON.parse(content);
-        // Defensive: re-mask credentials in case setSecret scope changes
-        if (creds.AccessKeyId)
-            core.setSecret(creds.AccessKeyId);
-        if (creds.SecretAccessKey)
-            core.setSecret(creds.SecretAccessKey);
-        if (creds.SessionToken)
-            core.setSecret(creds.SessionToken);
-        if (!creds.AccessKeyId || !creds.SecretAccessKey || !creds.SessionToken) {
-            core.warning('Credentials file is missing required fields — skipping');
-            return;
-        }
-        core.exportVariable('AWS_ACCESS_KEY_ID', creds.AccessKeyId);
-        core.exportVariable('AWS_SECRET_ACCESS_KEY', creds.SecretAccessKey);
-        core.exportVariable('AWS_SESSION_TOKEN', creds.SessionToken);
-        core.exportVariable('AWS_REGION', AWS_REGION);
-        core.exportVariable('AWS_DEFAULT_REGION', AWS_REGION);
-        // Clear profile-based config so AWS SDK uses fromEnv() instead of fromIni().
-        // Safe here because this is a post step — no user code runs after it.
-        core.exportVariable('AWS_PROFILE', '');
-        core.exportVariable('AWS_DEFAULT_PROFILE', '');
-        await writeAwsCredentialsFile(creds);
-        core.info('Cache credentials restored for post-step cache save');
-    }
-    catch (error) {
-        core.warning(`Failed to restore credentials: ${error instanceof Error ? error.message : error}`);
-    }
+    core.info(`Symlink keeper registered (cache-metrics-action-path: ${cacheMetricsActionPath || '<empty>'})`);
 }
 /* istanbul ignore next */
 if (!process.env.VITEST) {
@@ -31175,14 +31118,6 @@ module.exports = require("events");
 
 "use strict";
 module.exports = require("fs");
-
-/***/ }),
-
-/***/ 1943:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("fs/promises");
 
 /***/ }),
 
@@ -31460,7 +31395,7 @@ module.exports = require("util");
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
 /******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(1321);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(6057);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()

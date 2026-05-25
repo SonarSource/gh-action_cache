@@ -31025,7 +31025,7 @@ module.exports = {
 
 /***/ }),
 
-/***/ 1321:
+/***/ 2830:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -31064,71 +31064,56 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getAwsDir = getAwsDir;
-exports.writeAwsCredentialsFile = writeAwsCredentialsFile;
+exports.ensureCacheMetricsSymlink = ensureCacheMetricsSymlink;
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
-const fs = __importStar(__nccwpck_require__(1943));
-const os = __importStar(__nccwpck_require__(857));
-const path = __importStar(__nccwpck_require__(6928));
-const AWS_REGION = 'eu-central-1';
-function getAwsDir() {
-    return path.join(process.env.__TEST_AWS_HOME || os.homedir(), '.aws');
-}
-async function writeAwsCredentialsFile(creds) {
-    const awsDir = getAwsDir();
-    await fs.mkdir(awsDir, { recursive: true, mode: 0o700 });
-    const credentialsContent = [
-        '[default]',
-        `aws_access_key_id = ${creds.AccessKeyId}`,
-        `aws_secret_access_key = ${creds.SecretAccessKey}`,
-        `aws_session_token = ${creds.SessionToken}`,
-        '',
-    ].join('\n');
-    const configContent = ['[default]', `region = ${AWS_REGION}`, ''].join('\n');
-    await fs.writeFile(path.join(awsDir, 'credentials'), credentialsContent, {
-        mode: 0o600,
-    });
-    await fs.writeFile(path.join(awsDir, 'config'), configContent, {
-        mode: 0o600,
-    });
-    core.info('Wrote credentials to ~/.aws/credentials [default] profile (fallback for nested composites)');
-}
-async function run() {
-    const credentialsFile = core.getState('credentials-file');
-    if (!credentialsFile) {
-        core.warning('No credentials file path in state — skipping credential restore');
+const fs = __importStar(__nccwpck_require__(1455));
+const path = __importStar(__nccwpck_require__(6760));
+const CACHE_METRICS_WORKSPACE_LINK = path.join('.actions', 'cache-metrics');
+/**
+ * Recreate the `.actions/cache-metrics` symlink if a nested actions/checkout wiped it
+ * between the parent composite's main steps and cache-metrics' post step. Runs before the
+ * cache-metrics post step (LIFO ordering) so its `uses: ./.actions/cache-metrics`
+ * resolves even after `git clean -ffdx` + `git reset --hard HEAD` +
+ * `git checkout --force <ref>` from a nested actions/checkout in the same job.
+ *
+ * Best-effort: any failure here is logged but never fails the post step.
+ */
+async function ensureCacheMetricsSymlink(target) {
+    if (!target)
+        return;
+    try {
+        await fs.access(path.join(CACHE_METRICS_WORKSPACE_LINK, 'action.yml'));
+        return;
+    }
+    catch {
+        // fall through to recreate
+    }
+    try {
+        await fs.access(path.join(target, 'action.yml'));
+    }
+    catch (err) {
+        core.warning(`cache-metrics symlink keeper: target action.yml missing under ${target} — skipping recreation: ${err instanceof Error ? err.message : err}`);
         return;
     }
     try {
-        const content = await fs.readFile(credentialsFile, 'utf-8');
-        const creds = JSON.parse(content);
-        // Defensive: re-mask credentials in case setSecret scope changes
-        if (creds.AccessKeyId)
-            core.setSecret(creds.AccessKeyId);
-        if (creds.SecretAccessKey)
-            core.setSecret(creds.SecretAccessKey);
-        if (creds.SessionToken)
-            core.setSecret(creds.SessionToken);
-        if (!creds.AccessKeyId || !creds.SecretAccessKey || !creds.SessionToken) {
-            core.warning('Credentials file is missing required fields — skipping');
-            return;
+        await fs.mkdir(path.dirname(CACHE_METRICS_WORKSPACE_LINK), { recursive: true });
+        try {
+            await fs.unlink(CACHE_METRICS_WORKSPACE_LINK);
         }
-        core.exportVariable('AWS_ACCESS_KEY_ID', creds.AccessKeyId);
-        core.exportVariable('AWS_SECRET_ACCESS_KEY', creds.SecretAccessKey);
-        core.exportVariable('AWS_SESSION_TOKEN', creds.SessionToken);
-        core.exportVariable('AWS_REGION', AWS_REGION);
-        core.exportVariable('AWS_DEFAULT_REGION', AWS_REGION);
-        // Clear profile-based config so AWS SDK uses fromEnv() instead of fromIni().
-        // Safe here because this is a post step — no user code runs after it.
-        core.exportVariable('AWS_PROFILE', '');
-        core.exportVariable('AWS_DEFAULT_PROFILE', '');
-        await writeAwsCredentialsFile(creds);
-        core.info('Cache credentials restored for post-step cache save');
+        catch {
+            // either doesn't exist (ENOENT) or is a directory (EISDIR) — unlink fails silently;
+            // symlink() will error with EEXIST in that case and the outer catch will log a warning.
+        }
+        await fs.symlink(target, CACHE_METRICS_WORKSPACE_LINK);
+        core.info(`cache-metrics symlink keeper: recreated ${CACHE_METRICS_WORKSPACE_LINK} -> ${target}`);
     }
-    catch (error) {
-        core.warning(`Failed to restore credentials: ${error instanceof Error ? error.message : error}`);
+    catch (err) {
+        core.warning(`cache-metrics symlink keeper: failed to recreate ${CACHE_METRICS_WORKSPACE_LINK}: ${err instanceof Error ? err.message : err}`);
     }
+}
+async function run() {
+    await ensureCacheMetricsSymlink(core.getState('cache-metrics-action-path'));
 }
 /* istanbul ignore next */
 if (!process.env.VITEST) {
@@ -31175,14 +31160,6 @@ module.exports = require("events");
 
 "use strict";
 module.exports = require("fs");
-
-/***/ }),
-
-/***/ 1943:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("fs/promises");
 
 /***/ }),
 
@@ -31274,6 +31251,14 @@ module.exports = require("node:events");
 
 /***/ }),
 
+/***/ 1455:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:fs/promises");
+
+/***/ }),
+
 /***/ 7067:
 /***/ ((module) => {
 
@@ -31295,6 +31280,14 @@ module.exports = require("node:http2");
 
 "use strict";
 module.exports = require("node:net");
+
+/***/ }),
+
+/***/ 6760:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:path");
 
 /***/ }),
 
@@ -31460,7 +31453,7 @@ module.exports = require("util");
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
 /******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(1321);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(2830);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()

@@ -35,33 +35,6 @@ describe('credential-guard-main', () => {
     );
   });
 
-  it('saves cache-metrics-action-path to GITHUB_STATE when provided', async () => {
-    const credsPath = path.join(os.tmpdir(), 'creds', 'credentials.json');
-    const metricsPath = path.join(os.tmpdir(), 'action', 'cache-metrics');
-    const inputs: Record<string, string> = {
-      'credentials-file': credsPath,
-      'cache-metrics-action-path': metricsPath,
-    };
-    vi.mocked(core.getInput).mockImplementation((name: string) => inputs[name] ?? '');
-
-    const { run } = await import('../src/credential-guard-main');
-    await run();
-
-    expect(core.saveState).toHaveBeenCalledWith('cache-metrics-action-path', metricsPath);
-  });
-
-  it('does not save cache-metrics-action-path state when input is empty', async () => {
-    const inputs: Record<string, string> = {
-      'credentials-file': path.join(os.tmpdir(), 'creds.json'),
-    };
-    vi.mocked(core.getInput).mockImplementation((name: string) => inputs[name] ?? '');
-
-    const { run } = await import('../src/credential-guard-main');
-    await run();
-
-    expect(core.saveState).not.toHaveBeenCalledWith('cache-metrics-action-path', expect.anything());
-  });
-
   it('fails when credentials-file input is missing', async () => {
     vi.mocked(core.getInput).mockImplementation(() => {
       throw new Error('Input required and not supplied: credentials-file');
@@ -126,16 +99,13 @@ describe('credential-guard-post', () => {
     expect(core.exportVariable).not.toHaveBeenCalled();
   });
 
-  it('logs and exits cleanly when no state was saved', async () => {
-    // Demoted from warning to info: credential-guard-post now also handles the cache-metrics
-    // symlink keeper, so an empty credentials-file is the normal no-op path on non-S3 runs.
+  it('warns if no state was saved', async () => {
     vi.mocked(core.getState).mockReturnValue('');
 
     const { run } = await import('../src/credential-guard-post');
     await run();
 
-    expect(core.info).toHaveBeenCalledWith(expect.stringContaining('No credentials file'));
-    expect(core.exportVariable).not.toHaveBeenCalled();
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('No credentials file'));
   });
 
   it('writes ~/.aws/credentials with correct INI format', async () => {
@@ -231,85 +201,6 @@ describe('credential-guard-post', () => {
     expect(core.info).toHaveBeenCalledWith(
       'Wrote credentials to ~/.aws/credentials [default] profile (fallback for nested composites)'
     );
-  });
-
-  it('symlink keeper: skips when target is empty (CI_METRICS_ENABLED unset)', async () => {
-    vi.mocked(core.getState).mockReturnValue('');
-
-    const { ensureCacheMetricsSymlink } = await import('../src/credential-guard-post');
-    await ensureCacheMetricsSymlink('');
-
-    expect(core.warning).not.toHaveBeenCalled();
-    expect(core.info).not.toHaveBeenCalled();
-  });
-
-  it('symlink keeper: leaves existing symlink alone when target action.yml is reachable', async () => {
-    // Layout: <tmp>/source/cache-metrics/action.yml is the canonical target.
-    //         <tmp>/workspace/.actions/cache-metrics is an existing symlink to it.
-    const source = path.join(tmpDir, 'source', 'cache-metrics');
-    await fs.mkdir(source, { recursive: true });
-    await fs.writeFile(path.join(source, 'action.yml'), 'name: dummy\n');
-    const workspace = path.join(tmpDir, 'workspace');
-    await fs.mkdir(path.join(workspace, '.actions'), { recursive: true });
-    await fs.symlink(source, path.join(workspace, '.actions', 'cache-metrics'));
-
-    const prevCwd = process.cwd();
-    process.chdir(workspace);
-    try {
-      const { ensureCacheMetricsSymlink } = await import('../src/credential-guard-post');
-      await ensureCacheMetricsSymlink(source);
-    } finally {
-      process.chdir(prevCwd);
-    }
-
-    // No recreation log fired — the existing symlink was left untouched.
-    expect(core.info).not.toHaveBeenCalledWith(expect.stringContaining('recreated'));
-    // Sanity: still a symlink pointing at source.
-    const linkTarget = await fs.readlink(path.join(workspace, '.actions', 'cache-metrics'));
-    expect(linkTarget).toBe(source);
-  });
-
-  it('symlink keeper: recreates the symlink when missing', async () => {
-    const source = path.join(tmpDir, 'source', 'cache-metrics');
-    await fs.mkdir(source, { recursive: true });
-    await fs.writeFile(path.join(source, 'action.yml'), 'name: dummy\n');
-    const workspace = path.join(tmpDir, 'workspace');
-    await fs.mkdir(workspace, { recursive: true });
-
-    const prevCwd = process.cwd();
-    process.chdir(workspace);
-    try {
-      const { ensureCacheMetricsSymlink } = await import('../src/credential-guard-post');
-      await ensureCacheMetricsSymlink(source);
-    } finally {
-      process.chdir(prevCwd);
-    }
-
-    const linkTarget = await fs.readlink(path.join(workspace, '.actions', 'cache-metrics'));
-    expect(linkTarget).toBe(source);
-    expect(core.info).toHaveBeenCalledWith(expect.stringContaining('recreated'));
-  });
-
-  it('symlink keeper: warns and skips when target action.yml is missing', async () => {
-    const missingSource = path.join(tmpDir, 'no-such-source', 'cache-metrics');
-    const workspace = path.join(tmpDir, 'workspace');
-    await fs.mkdir(workspace, { recursive: true });
-
-    const prevCwd = process.cwd();
-    process.chdir(workspace);
-    try {
-      const { ensureCacheMetricsSymlink } = await import('../src/credential-guard-post');
-      await ensureCacheMetricsSymlink(missingSource);
-    } finally {
-      process.chdir(prevCwd);
-    }
-
-    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('target action.yml missing'));
-    const linkExists = await fs
-      .access(path.join(workspace, '.actions', 'cache-metrics'))
-      .then(() => true)
-      .catch(() => false);
-    expect(linkExists).toBe(false);
   });
 
   it('does not write ~/.aws/credentials when credentials are missing fields', async () => {

@@ -1,0 +1,19 @@
+name: Symlink Keeper
+description: >-
+  Internal action - recreates the `.actions/cache-metrics` workspace symlink if a nested actions/checkout wiped it between the parent
+  composite's main phase and the cache-metrics post step.
+inputs:
+  cache-metrics-action-path:
+    description: >-
+      Absolute path to the parent action's `cache-metrics` sub-action directory (typically the parent action's github.action_path joined
+      with `cache-metrics`). When set, the post step recreates the workspace symlink `.actions/cache-metrics` if it has been wiped by a
+      nested actions/checkout `git clean -ffdx` and/or `git reset --hard` between the cache-metrics main and post steps. Empty to disable.
+    required: false
+    default: ''
+runs:
+  using: node20
+  main: dist/main/index.js
+  # Post must run even on prior failure: cache-metrics-post uses `post-if: always()`, so this keeper's post must also run on failure paths
+  # to recreate the symlink before cache-metrics-post fires.
+  post: dist/post/index.js
+  post-if: always()

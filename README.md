@@ -35,17 +35,21 @@ npm run test:watch    # watch mode
 
 ### Build
 
-The JS sub-actions (`credential-setup`, `credential-guard`) are bundled with
+The JS sub-actions (`credential-setup`, `credential-guard`, `cache-metrics`, `symlink-keeper`) are bundled with
 `@vercel/ncc` into self-contained dist files. Rebuild after changing TypeScript source:
 
 ```bash
-npm run build         # build all sub-actions
-npm run build:setup   # build credential-setup only
-npm run build:guard-main  # build credential-guard main only
-npm run build:guard-post  # build credential-guard post only
+npm run build               # build all sub-actions
+npm run build:setup         # build credential-setup only
+npm run build:guard-main    # build credential-guard main only
+npm run build:guard-post    # build credential-guard post only
+npm run build:metrics-main  # build cache-metrics main only
+npm run build:metrics-post  # build cache-metrics post only
+npm run build:keeper-main   # build symlink-keeper main only
+npm run build:keeper-post   # build symlink-keeper post only
 ```
 
-Bundled output goes to `credential-setup/dist/` and `credential-guard/dist/`.
+Bundled output goes to `credential-setup/dist/`, `credential-guard/dist/`, `cache-metrics/dist/`, and `symlink-keeper/dist/`.
 These must be committed since GitHub Actions runs them directly.
 
 ## Usage

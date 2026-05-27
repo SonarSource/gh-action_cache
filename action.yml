@@ -300,12 +300,6 @@ runs:
           echo "::endgroup::"
           exit 0
         fi
-        # `git add -f` is best-effort: it survives a bare `git clean -ffdx`, but not the subsequent
-        # `git reset --hard HEAD` + `git checkout --force <ref>` that actions/checkout runs. The real
-        # safety net is the `symlink-keeper` step registered last in this composite.
-        if ! git add -f .actions 2>/dev/null; then
-          echo "::warning::cache-metrics: could not 'git add' the .actions symlink."
-        fi
         echo "prepared=true" >> "$GITHUB_OUTPUT"
         echo "::endgroup::"
         exit 0

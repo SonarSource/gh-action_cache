@@ -361,7 +361,7 @@ jobs:
 
       # Simulate what a nested actions/checkout does (clean → reset --hard → fetch → checkout --force).
       # This is the sequence that wiped `.actions/cache-metrics` from the workspace between main and post
-      # in the pre-commit job — the `git add -f .actions` workaround survives the clean but not the reset.
+      # in the pre-commit job — recovery is handled by the `symlink-keeper` post step.
       - name: Re-run actions/checkout (simulates nested action's checkout)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 

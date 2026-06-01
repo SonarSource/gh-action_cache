@@ -140,7 +140,7 @@ runs:
 
     - name: Cache with GitHub Actions (public repos)
       if: steps.cache-backend.outputs.cache-backend == 'github'
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       id: github-cache
       with:
         path: ${{ inputs.path }}
@@ -173,7 +173,7 @@ runs:
 
     - name: Cache on S3
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      uses: runs-on/cache@50350ad4242587b6c8c2baa2e740b1bc11285ff4 # v4.3.0
+      uses: runs-on/cache@88d90644011a3a9957fd141a106f5a94f9794203 # v5.0.7
       id: s3-cache
       env:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
@@ -202,7 +202,7 @@ runs:
         steps.cache-backend.outputs.cache-backend == 's3' &&
         steps.s3-cache.outputs.cache-hit != 'true' &&
         steps.cache-backend.outputs.import-github == 'true'
-      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       id: github-import
       with:
         path: ${{ inputs.path }}

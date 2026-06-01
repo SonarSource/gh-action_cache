@@ -85,7 +85,7 @@ the matching job:
 
 ## Pinned environment
 
-- Node 20 runtime in both sub-actions (`runs.using: node20`).
+- Node 24 runtime in all four sub-actions (`runs.using: node24`).
 - `python 3.13.5` and `go 1.21.13` in `.tool-versions` — used by the test workflows via `mise`.
 - AWS region hard-coded to `eu-central-1`; S3 bucket pattern `sonarsource-s3-cache-{env}-bucket`.
 - Cognito pool & account IDs for `prod`/`dev` are hard-coded in `src/credential-setup.ts:7-15`.

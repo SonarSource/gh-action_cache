@@ -29,7 +29,7 @@ outputs:
   cache-size-bytes:
     description: Total size in bytes of the cached path(s) at restore-time
 runs:
-  using: node20
+  using: node24
   main: dist/main/index.js
   post: dist/post/index.js
   # Run the post step even when an earlier step in the job failed — metrics are most useful precisely when something went wrong, and the

@@ -11,7 +11,7 @@ inputs:
     required: false
     default: ''
 runs:
-  using: node20
+  using: node24
   main: dist/main/index.js
   # Post must run even on prior failure: cache-metrics-post uses `post-if: always()`, so this keeper's post must also run on failure paths
   # to recreate the symlink before cache-metrics-post fires.

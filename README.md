@@ -13,45 +13,6 @@ cache interface.
 - `jq` (used by the cache key preparation script)
 - `id-token: write` permission (required for OIDC authentication with S3 backend)
 
-## Development
-
-### Prerequisites
-
-- Node.js 20+
-- npm
-
-### Install dependencies
-
-```bash
-npm install
-```
-
-### Run tests
-
-```bash
-npm test              # single run
-npm run test:watch    # watch mode
-```
-
-### Build
-
-The JS sub-actions (`credential-setup`, `credential-guard`, `cache-metrics`, `symlink-keeper`) are bundled with
-`@vercel/ncc` into self-contained dist files. Rebuild after changing TypeScript source:
-
-```bash
-npm run build               # build all sub-actions
-npm run build:setup         # build credential-setup only
-npm run build:guard-main    # build credential-guard main only
-npm run build:guard-post    # build credential-guard post only
-npm run build:metrics-main  # build cache-metrics main only
-npm run build:metrics-post  # build cache-metrics post only
-npm run build:keeper-main   # build symlink-keeper main only
-npm run build:keeper-post   # build symlink-keeper post only
-```
-
-Bundled output goes to `credential-setup/dist/`, `credential-guard/dist/`, `cache-metrics/dist/`, and `symlink-keeper/dist/`.
-These must be committed since GitHub Actions runs them directly.
-
 ## Usage
 
 ```yaml
@@ -73,7 +34,7 @@ These must be committed since GitHub Actions runs them directly.
 | `CI_METRICS_ENABLED`  | Workflow-level override for the pipeline-runtime-metrics gate (Linux only). `'true'` forces metrics on, `'false'` forces metrics off; unset honours the runner-side decision file (see below).             |
 | `CI_METRICS_DIR`      | Directory holding the runner-side decision file (`enabled`) and the per-invocation cache JSON. Provided by the ARC pod template / WarpBuild AMI; defaults to `/tmp/ci-metrics` when unset or empty.        |
 
-## Inputs
+### Inputs
 
 | Input                        | Description                                                                                                                                      | Required | Default                                                                                                  |
 |------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|----------|----------------------------------------------------------------------------------------------------------|
@@ -90,7 +51,7 @@ These must be committed since GitHub Actions runs them directly.
 | `backend`                    | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |                                                                                                          |
 | `import-github-cache`        | Import GitHub cache to S3 when no S3 cache exists (migration mode, S3 backend only). Takes priority over `CACHE_IMPORT_GITHUB` env var.          | No       | `true` when backend is explicitly forced to `s3` or for public repos; `false` for private/internal repos |
 
-## Backend Selection
+### Backend Selection
 
 The cache backend is determined in the following priority order:
 
@@ -106,7 +67,7 @@ env:
   CACHE_BACKEND: s3   # forces S3 for all cache steps, including those in reusable actions
 ```
 
-## Migration Mode (GitHub cache → S3)
+### Migration Mode (GitHub cache → S3)
 
 When switching from GitHub Actions cache to S3, existing cache entries live only in GitHub and would need to be rebuilt from scratch.
 Migration mode bridges this gap: when using the S3 backend and no S3 cache exists, the action automatically falls back to restore
@@ -181,7 +142,7 @@ gh variable delete CACHE_IMPORT_GITHUB
 gh variable set CACHE_IMPORT_GITHUB --body "true"
 ```
 
-## Outputs
+### Outputs
 
 | Output              | Description                                                                                                                                   |
 |---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
@@ -471,3 +432,155 @@ gh workflow run cleanup-cache.yml -f branch="feature/my-branch" -f dry-run=false
 # Delete specific cache key on a branch
 gh workflow run cleanup-cache.yml -f branch="feature/my-branch" -f key="sccache-Linux-" -f dry-run=false
 ```
+
+## Development
+
+### Prerequisites
+
+- Node.js 24+
+- npm
+
+### Install dependencies
+
+```bash
+npm install
+```
+
+### Run tests
+
+```bash
+npm test              # single run
+npm run test:watch    # watch mode
+```
+
+### Build
+
+The JS sub-actions (`credential-setup`, `credential-guard`, `cache-metrics`, `symlink-keeper`) are bundled with
+`@vercel/ncc` into self-contained dist files. Rebuild after changing TypeScript source:
+
+```bash
+npm run build               # build all sub-actions
+npm run build:setup         # build credential-setup only
+npm run build:guard-main    # build credential-guard main only
+npm run build:guard-post    # build credential-guard post only
+npm run build:metrics-main  # build cache-metrics main only
+npm run build:metrics-post  # build cache-metrics post only
+npm run build:keeper-main   # build symlink-keeper main only
+npm run build:keeper-post   # build symlink-keeper post only
+```
+
+Bundled output goes to `credential-setup/dist/`, `credential-guard/dist/`, `cache-metrics/dist/`, and `symlink-keeper/dist/`.
+These must be committed since GitHub Actions runs them directly.
+
+### Releasing
+
+Releases are cut manually — there is no automated release workflow. Before making a release, ensure that all checks are green.
+
+Tags follow SemVer: `vX.Y.Z`. Follow semantic versioning principles when determining the new version number based on the nature of the
+changes (**new features**, improvements, fixes, documentation, and **breaking changes**).
+
+1. Create a new GitHub release on <https://github.com/SonarSource/gh-action_cache/releases>
+
+   Semantic versioning is crucial for clear communication of the changes in each release:
+
+    - Increase the **patch** number for **bug fixes**, **improvements**, and **documentation updates**,
+    - Increase the **minor** number for **new features**,
+    - Increase the **major** number for **breaking changes**.
+
+   Edit the generated release notes to curate the highlights and key fixes. Make sure that the notes are clear and informative.
+
+    ```markdown
+    ## What's Changed
+    ### New Features
+    * BUILD-... by @username in https://github.com/SonarSource/gh-action_cache/pull/...
+
+    ### Improvements
+    * ...
+
+    ### Bug Fixes
+    * ...
+
+    ### Documentation
+    * ...
+
+    ## New Contributors
+    * ...
+
+    ---
+
+    Additional notes, examples, or references if applicable.
+
+    **Full Changelog**: https://github.com/SonarSource/gh-action_cache/compare/...
+    ```
+
+   Make sure to include any **breaking changes** in the notes.
+
+2. After release, the `v*` branch must be updated for pointing to the new tag.
+
+    ```shell
+    git fetch --tags
+    git update-ref -m "reset: update branch v1 to tag v1.y.z" refs/heads/v1 v1.y.z
+    git push origin v1
+    ```
+
+3. Communicate Updates, Changes and Migrations
+
+   Communicate the new release on the [#ops-platform-releases](https://sonarsource.enterprise.slack.com/archives/C0A6RL3L9BP) Slack
+   channel.
+
+   > 🚀 **New release `1.y.z` of `gh-action_cache`** (`v1` branch updated) 🚀
+   >
+   > ---
+   >
+   > ### ✨ What's New
+   >
+   > - *Curated highlights from release notes: new features, important new options*
+   >
+   > ### ⚡ Improvements
+   >
+   > - *Curated highlights from release notes: improvement and upgrades*
+   >
+   > ### 🐛 Bug Fixes
+   >
+   > - *Curated highlights from release notes*
+   >
+   > ### 📚 Documentation
+   >
+   > - *Curated highlights from release notes*
+   >
+   >
+   > For all the details, you can
+   > [read the full release notes on GitHub](https://github.com/SonarSource/gh-action_cache/releases/tag/v1.y.z).
+
+   Communicate major updates, changes and migrations that require action from users following as indicated in
+   the [Updates, Changes and Migrations for Squads - Platform](https://xtranet-sonarsource.atlassian.net/wiki/spaces/Platform/pages/4385374219/Updates+Changes+and+Migrations+for+Squads+-+Platform#Usage-of-Communication-Channels)
+   xtranet page.
+
+---
+
+### symlink-keeper
+
+`symlink-keeper` is an internal sub-action, not intended for external use. It exists to work around two GitHub Actions limitations:
+
+- **Self-reference restriction**: a composite action cannot reference its own sub-actions by relative path at runtime — an external ref
+  (`uses: SonarSource/gh-action_cache/symlink-keeper@<ref>`) is required.
+- **Symlink destruction**: some external actions (e.g. `actions/checkout` with `clean: true`) delete symlinks created earlier in the job;
+  `symlink-keeper` re-creates them as a post step.
+
+It is versioned and released independently of the main cache action and referenced by version tag in the main action's workflow files (e.g.
+`@symlink-keeper-1.0.0`).
+
+During development, point references to a branch instead of a tag:
+
+1. Create a branch `symlink-keeper-x.y.z` (e.g. `symlink-keeper-1.0.1`) with your changes.
+2. Update all `@symlink-keeper-*` references in the codebase to `@symlink-keeper-x.y.z`.
+3. Open a PR as usual and iterate on the branch.
+
+#### Releasing symlink-keeper
+
+After the PR is merged to `master`:
+
+1. Create a GitHub release with tag `symlink-keeper-x.y.z` pointing to the merged commit.
+2. Delete the `symlink-keeper-x.y.z` branch (the tag replaces it).
+
+The tag is what callers pin to in production.

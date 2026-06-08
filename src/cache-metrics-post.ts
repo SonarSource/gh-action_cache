@@ -30,14 +30,14 @@ export async function run(): Promise<void> {
     const record: CacheMetricsRecord = {
       step: prior.step ?? 'cache',
       key: prior.key ?? '',
-      'restore-key-hit': prior['restore-key-hit'] ?? null,
+      restore_key_hit: prior.restore_key_hit ?? null,
       backend: prior.backend ?? 'unknown',
-      'cache-hit': prior['cache-hit'] ?? cacheHit,
-      'size-bytes-restored': prior['size-bytes-restored'] ?? null,
-      'size-bytes-at-end': sizeBytes,
+      cache_hit: prior.cache_hit ?? cacheHit,
+      size_bytes_restored: prior.size_bytes_restored ?? null,
+      size_bytes_at_end: sizeBytes,
       saved,
-      'timestamp-restored': prior['timestamp-restored'] ?? null,
-      'timestamp-at-end': new Date().toISOString(),
+      timestamp_restored: prior.timestamp_restored ?? null,
+      timestamp_at_end: new Date().toISOString(),
     };
 
     writeMetricsFile(metricsFile, record);

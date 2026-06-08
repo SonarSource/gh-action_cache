@@ -18,27 +18,27 @@ export interface CacheMetricsRecord {
   step: string;
   key: string;
   /**
-   * The prefix-matched restore key. Populated only when `cache-hit` is false AND a restore key matched (partial hit); null on exact hits
+   * The prefix-matched restore key. Populated only when `cache_hit` is false AND a restore key matched (partial hit); null on exact hits
    * and on misses.
    */
-  'restore-key-hit': string | null;
+  restore_key_hit: string | null;
   backend: string;
-  'cache-hit': boolean;
+  cache_hit: boolean;
   /** Size of the cache content at restore-time (0 on a miss with no partial hit). */
-  'size-bytes-restored': number | null;
+  size_bytes_restored: number | null;
   /**
    * Size of the cache content at end of job, measured in the post step BEFORE the cache action's save runs. Reflects what would be saved
    * if `saved` is true, or simply the path size at job end if `saved` is false (e.g. exact hit, where the cache action skips save and user
    * modifications are not persisted).
    */
-  'size-bytes-at-end': number | null;
+  size_bytes_at_end: number | null;
   /**
-   * Whether the cache action actually persists the cache at job end. False when `cache-hit` was true (exact match: cache action skips save)
+   * Whether the cache action actually persists the cache at job end. False when `cache_hit` was true (exact match: cache action skips save)
    * or when lookup-only` was set.
    */
   saved: boolean | null;
-  'timestamp-restored': string | null;
-  'timestamp-at-end': string | null;
+  timestamp_restored: string | null;
+  timestamp_at_end: string | null;
 }
 
 /**

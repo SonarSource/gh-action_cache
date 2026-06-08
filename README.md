@@ -27,12 +27,12 @@ cache interface.
 
 ### Input Environment Variables
 
-| Environment Variable  | Description                                                                                                                                                                                                |
-|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `CACHE_BACKEND`       | Force specific backend: `github` or `s3` (overrides auto-detection).                                                                                                                                       |
-| `CACHE_IMPORT_GITHUB` | Disable GitHub cache fallback for S3 backend (migration mode) when set to `false`.                                                                                                                         |
-| `CI_METRICS_ENABLED`  | Workflow-level override for the pipeline-runtime-metrics gate (Linux only). `'true'` forces metrics on, `'false'` forces metrics off; unset honours the runner-side decision file (see below).             |
-| `CI_METRICS_DIR`      | Directory holding the runner-side decision file (`enabled`) and the per-invocation cache JSON. Provided by the ARC pod template / WarpBuild AMI; defaults to `/tmp/ci-metrics` when unset or empty.        |
+| Environment Variable  | Description                                                                                                                                                                   |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `CACHE_BACKEND`       | Force specific backend: `github` or `s3` (overrides auto-detection).                                                                                                          |
+| `CACHE_IMPORT_GITHUB` | Disable GitHub cache fallback for S3 backend (migration mode) when set to `false`.                                                                                            |
+| `CI_METRICS_ENABLED`  | Pipeline-runtime-metrics gate (Linux only). `'true'` → on; `'false'` → off. Without an explicit workflow `env:` override, falls back to `${CI_METRICS_DIR}/enabled` presence. |
+| `CI_METRICS_DIR`      | Holds the runner-side decision file (`enabled`) and per-invocation `cache-*.json` files. Defaults to `/tmp/ci-metrics`; set by ARC pod template or WarpBuild AMI.             |
 
 ### Inputs
 
@@ -162,20 +162,17 @@ The record is written on all platforms once the gate resolves to "on" (see Gate 
 Size fields (`size_bytes_restored`, `size_bytes_at_end`) are `null` on non-Linux (no GNU `du`);
 all other fields (`cache_hit`, `restore_key_hit`, `backend`, `saved`, timestamps, `key`) are populated on every platform.
 
-**Gate resolution** ([BUILD-11295](https://sonarsource.atlassian.net/browse/BUILD-11295)):
+**Gate resolution**:
 
-1. Workflow `env: { CI_METRICS_ENABLED: 'false' }` → off (beats everything).
-2. Workflow `env: { CI_METRICS_ENABLED: 'true' }` → on (beats the runner-side allow/deny).
-3. Otherwise, on iff `${CI_METRICS_DIR}/enabled` exists. This file is written at job start by the runner pre-job hook
-   (`github-runners-infra/hooks/job-started.sh`) based on the per-env, per-repo, per-workflow allow/deny lists. On runners outside
-   SonarSource's ARC pool (GitHub-hosted, WarpBuild), the file is absent unless a workflow setup step touches it explicitly.
+The gate evaluates the workflow-level `env:` block first, then falls back to the presence-only file written by the runner pre-job hook:
 
-When the gate resolves to "off", the cache flow runs exactly as before — no metrics steps, no JSON file, and `cache-size-bytes`
-is empty. The other outputs (`cache-hit`, `cache-matched-key`, `restore-key-hit`, `backend`) are unaffected.
+1. Workflow `env: { CI_METRICS_ENABLED: 'false' }` → off (beats everything; removes `${CI_METRICS_DIR}/enabled` too).
+2. Workflow `env: { CI_METRICS_ENABLED: 'true' }` → on (beats the runner-side decision; touches `${CI_METRICS_DIR}/enabled` too).
+3. Otherwise, on iff `${CI_METRICS_DIR}/enabled` exists (written by the runner pre-job hook `job-started.sh`, which evaluates
+   the per-env / per-repo / per-workflow allow/deny lists). On runners without the hook the file is absent → metrics are off.
 
-The action also propagates the workflow `CI_METRICS_ENABLED` override to the same file (touch on `'true'`, remove on `'false'`)
-so the post-job `job-completed.sh` hook sees the same decision the cache action did. Workflows that don't use this action and
-still want to override can add the equivalent 4-line setup step (`case ... touch/rm $CI_METRICS_DIR/enabled`).
+When the gate resolves to "off", the cache flow runs exactly as before — no metrics steps, no JSON file, and `cache-size-bytes` is empty.
+The other outputs (`cache-hit`, `cache-matched-key`, `restore-key-hit`, `backend`) are unaffected.
 
 **Example — partial restore-key hit (primary missed, prefix-matched older entry restored, then re-saved under primary key):**
 

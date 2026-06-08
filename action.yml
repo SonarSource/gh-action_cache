@@ -244,11 +244,6 @@ runs:
         echo "cache-hit=${CACHE_HIT}" >> "$GITHUB_OUTPUT"
         echo "matched-key=${MATCHED_KEY}" >> "$GITHUB_OUTPUT"
 
-    # CI-metrics gating.
-    # On Linux: gate evaluates the presence-only file written by the runner pre-job hook (always runs).
-    # On non-Linux: gate only runs when CI_METRICS_ENABLED is explicitly set in the workflow env.
-    # Workflow-level `env: { CI_METRICS_ENABLED: 'true'|'false' }` always wins over the file.
-    # The step also mutates the file in the workflow-env override cases so the runner's post-job hook follows.
     - name: Resolve CI metrics gate
       id: ci-metrics-gate
       if: runner.os == 'Linux' || env.CI_METRICS_ENABLED == 'true'
@@ -270,11 +265,11 @@ runs:
             ;;
           *)
             if [[ -e "$CI_METRICS_DIR/enabled" ]]; then
-                decision=true
-                reason="Metrics enabled: runner-side decision file present at $CI_METRICS_DIR/enabled"
+              decision=true
+              reason="Metrics enabled: runner-side decision file present at $CI_METRICS_DIR/enabled"
             else
-                decision=false
-                reason="Metrics disabled: no signal (CI_METRICS_ENABLED unset and $CI_METRICS_DIR/enabled absent)"
+              decision=false
+              reason="Metrics disabled: no signal (CI_METRICS_ENABLED unset and $CI_METRICS_DIR/enabled absent)"
             fi
             ;;
         esac

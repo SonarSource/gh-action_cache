@@ -425,27 +425,34 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
-  # File-only path: metrics on when ${CI_METRICS_DIR}/enabled exists, even with no `env.CI_METRICS_ENABLED`.
-  # Simulates a runner whose pre-job hook (github-runners-infra/hooks/job-started.sh) wrote the decision file.
-  test-cache-metrics-via-decision-file:
-    runs-on: github-ubuntu-latest-s
+  # Runner-hook path: metrics on when the runner pre-job hook (job-started.sh) writes the decision
+  # file /tmp/ci-metrics/enabled. No workflow-level CI_METRICS_ENABLED — the gate resolves purely
+  # from the presence-only file written by the hook.
+  test-cache-metrics-runner-hook:
+    runs-on: sonar-xs
     permissions:
       id-token: write
       contents: read
-    # No CI_METRICS_ENABLED env on purpose — the gate must enable via the file alone.
+    # No CI_METRICS_ENABLED env set here — the runner pre-job hook writes the decision file.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: 2025.7.12
 
-      - name: Simulate runner pre-job decision file
+      - name: Verify runner pre-job hook activated CI metrics
         run: |
-          mkdir -p /tmp/ci-metrics
-          : > /tmp/ci-metrics/enabled
-          ls -la /tmp/ci-metrics
+          CI_METRICS_DIR="${CI_METRICS_DIR:-/tmp/ci-metrics}"
+          if [[ -e "$CI_METRICS_DIR/enabled" ]]; then
+            echo "Decision file present at $CI_METRICS_DIR/enabled ✓"
+          elif [[ -n "${CI_METRICS_ENABLED:-}" ]]; then
+            echo "CI_METRICS_ENABLED=${CI_METRICS_ENABLED} (hook using GITHUB_ENV approach) ✓"
+          else
+            echo "::error::Neither decision file ($CI_METRICS_DIR/enabled) nor CI_METRICS_ENABLED found — runner pre-job hook not active. Ensure the hook is deployed to this runner pool."
+            exit 1
+          fi
 
-      - name: Cache pip with S3 (file-only gate)
+      - name: Cache pip with S3 (runner hook gate)
         id: cache-file-gate
         uses: ./
         with:
@@ -458,7 +465,7 @@ jobs:
       - name: Verify metrics ran (cache-size-bytes output is set)
         run: |
           if [[ -z "${{ steps.cache-file-gate.outputs.cache-size-bytes }}" ]]; then
-            echo "::error::cache-size-bytes output was empty — gate did not honour the decision file"
+            echo "::error::cache-size-bytes output was empty — runner pre-job hook gate did not activate metrics"
             exit 1
           fi
           echo "cache-size-bytes = ${{ steps.cache-file-gate.outputs.cache-size-bytes }}"
@@ -468,7 +475,7 @@ jobs:
           shopt -s nullglob
           files=(/tmp/ci-metrics/cache-*.json)
           if (( ${#files[@]} == 0 )); then
-            echo "::error::no cache-*.json under /tmp/ci-metrics/ — file-gate path did not emit metrics"
+            echo "::error::no cache-*.json under /tmp/ci-metrics/ — runner hook gate path did not emit metrics"
             ls -la /tmp/ci-metrics/ || true
             exit 1
           fi
@@ -478,9 +485,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
-  # Workflow opt-out beats the decision file. Pre-touches the file (as the runner pre-job hook would),
-  # then sets CI_METRICS_ENABLED='false' at the job level. Metrics MUST NOT run, no cache-*.json written.
-  test-cache-metrics-workflow-false-beats-file:
+  # Workflow opt-out beats runner-hook file: simulates the runner pre-job hook writing the decision
+  # file, then verifies that job-level CI_METRICS_ENABLED=false wins (workflow-false > file-present
+  # in the layered gate). The gate step removes the file so the post-job hook also skips metrics.
+  test-cache-metrics-workflow-false:
     runs-on: github-ubuntu-latest-s
     permissions:
       id-token: write
@@ -509,25 +517,24 @@ jobs:
           environment: dev
           backend: s3
 
-      - name: Verify metrics did NOT run (cache-size-bytes empty, no cache-*.json)
+      - name: Verify metrics did NOT run (cache-size-bytes empty, no cache-*.json, file removed)
         run: |
           if [[ -n "${{ steps.cache-workflow-false.outputs.cache-size-bytes }}" ]]; then
-            echo "::error::cache-size-bytes was '${{ steps.cache-workflow-false.outputs.cache-size-bytes }}' — workflow CI_METRICS_ENABLED=false did NOT win over the decision file"
+            echo "::error::cache-size-bytes was '${{ steps.cache-workflow-false.outputs.cache-size-bytes }}' — job-level CI_METRICS_ENABLED=false did not disable metrics"
             exit 1
           fi
           shopt -s nullglob
           files=(/tmp/ci-metrics/cache-*.json)
           if (( ${#files[@]} > 0 )); then
-            echo "::error::cache-*.json files present — workflow CI_METRICS_ENABLED=false did NOT skip the cache-metrics sub-action"
+            echo "::error::cache-*.json files present — job-level CI_METRICS_ENABLED=false did NOT skip the cache-metrics sub-action"
             ls -la /tmp/ci-metrics/
             exit 1
           fi
-          # The propagator step should have removed the pre-existing enabled file.
           if [[ -e /tmp/ci-metrics/enabled ]]; then
-            echo "::error::/tmp/ci-metrics/enabled still exists — toggle step did not honour CI_METRICS_ENABLED=false"
+            echo "::error::/tmp/ci-metrics/enabled still exists — gate step did not honour CI_METRICS_ENABLED=false (file should be removed so the post-job hook also skips)"
             exit 1
           fi
-          echo "ok: gate correctly disabled via workflow opt-out"
+          echo "ok: gate correctly disabled via workflow opt-out (decision file absent)"
 
       - name: Populate cache path so the post-step has something to save
         run: |
@@ -548,8 +555,8 @@ jobs:
       - test-s3-cache-survives-git-clean
       - test-s3-cache-survives-git-clean-with-metrics
       - test-cache-metrics-output
-      - test-cache-metrics-via-decision-file
-      - test-cache-metrics-workflow-false-beats-file
+      - test-cache-metrics-runner-hook
+      - test-cache-metrics-workflow-false
     runs-on: github-ubuntu-latest-s
     steps:
       - name: Decide whether the needed jobs succeeded or failed

@@ -10,16 +10,12 @@ import {
 
 export async function run(): Promise<void> {
   try {
-    if (process.platform !== 'linux') {
-      core.info(`cache-metrics: skipping on platform ${process.platform} (Linux-only)`);
-      return;
-    }
-
     const inputs = readInputs();
     const slug = slugifyStepId(inputs.stepId);
     const file = metricsFilePath(inputs.metricsDir, slug);
 
-    const sizeBytes = measureCacheBytes(inputs.path);
+    // Size measurement requires GNU `du -sb` (Linux only); null on other platforms.
+    const sizeBytes = process.platform === 'linux' ? measureCacheBytes(inputs.path) : null;
     const timestamp = new Date().toISOString();
 
     // `matchedKey` is the underlying cache action's `cache-matched-key` output:
@@ -45,7 +41,9 @@ export async function run(): Promise<void> {
     };
 
     writeMetricsFile(file, record);
-    core.setOutput('cache-size-bytes', sizeBytes);
+    if (sizeBytes !== null) {
+      core.setOutput('cache-size-bytes', sizeBytes);
+    }
 
     // Stash inputs for the post step (it does not receive `with:` again).
     core.saveState('metricsFile', file);
@@ -53,9 +51,8 @@ export async function run(): Promise<void> {
     core.saveState('cacheHit', inputs.cacheHit ? 'true' : 'false');
     core.saveState('lookupOnly', inputs.lookupOnly ? 'true' : 'false');
 
-    core.info(
-      `cache-metrics: restored size = ${sizeBytes} B, metrics written to ${file}`
-    );
+    const sizeMsg = sizeBytes === null ? 'n/a (non-Linux)' : `${sizeBytes} B`;
+    core.info(`cache-metrics: restored size = ${sizeMsg}, metrics written to ${file}`);
   } catch (error) {
     // Fail-open: metrics issues must never break the cache flow.
     core.warning(

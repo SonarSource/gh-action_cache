@@ -8,10 +8,6 @@ import {
 
 export async function run(): Promise<void> {
   try {
-    if (process.platform !== 'linux') {
-      return;
-    }
-
     const metricsFile = core.getState('metricsFile');
     if (!metricsFile) {
       core.info('cache-metrics: no state from main step — skipping post-measurement');
@@ -22,7 +18,8 @@ export async function run(): Promise<void> {
     const cacheHit = core.getState('cacheHit') === 'true';
     const lookupOnly = core.getState('lookupOnly') === 'true';
 
-    const sizeBytes = measureCacheBytes(pathInput);
+    // Size measurement requires GNU `du -sb` (Linux only); null on other platforms.
+    const sizeBytes = process.platform === 'linux' ? measureCacheBytes(pathInput) : null;
     // The cache action skips save when it found an exact-match hit, or when in lookup-only mode.
     const saved = !lookupOnly && !cacheHit;
 
@@ -41,9 +38,8 @@ export async function run(): Promise<void> {
     };
 
     writeMetricsFile(metricsFile, record);
-    core.info(
-      `cache-metrics: saved size = ${sizeBytes} B, saved=${saved}, updated ${metricsFile}`
-    );
+    const sizeMsg = sizeBytes === null ? 'n/a (non-Linux)' : `${sizeBytes} B`;
+    core.info(`cache-metrics: saved size = ${sizeMsg}, saved=${saved}, updated ${metricsFile}`);
   } catch (error) {
     // Fail-open: metrics issues must never break the cache flow.
     core.warning(

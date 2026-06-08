@@ -64,9 +64,9 @@ outputs:
     value: ${{ steps.cache-backend.outputs.cache-backend }}
   cache-size-bytes:
     description: >
-      Total size in bytes of the cached path(s) at restore-time (Linux only; empty on other platforms).
+      Total size in bytes of the cached path(s) at restore-time. Requires GNU du (Linux); empty on other platforms.
       The action also writes a per-invocation JSON record to /tmp/ci-metrics/cache-${step}.json for the pipeline-runtime-metrics
-      job-completed hook to ingest.
+      job-completed hook to ingest. The JSON record is written on all platforms; only the size fields are null on non-Linux.
     value: ${{ steps.cache-metrics.outputs.cache-size-bytes }}
 
 runs:
@@ -245,12 +245,13 @@ runs:
         echo "matched-key=${MATCHED_KEY}" >> "$GITHUB_OUTPUT"
 
     # CI-metrics gating.
-    # The single source of truth is the presence-only file ${CI_METRICS_DIR}/enabled written by the runner's pre-job hook.
-    # Workflow-level `env: { CI_METRICS_ENABLED: 'true'|'false' }` always wins.
+    # On Linux: gate evaluates the presence-only file written by the runner pre-job hook (always runs).
+    # On non-Linux: gate only runs when CI_METRICS_ENABLED is explicitly set in the workflow env.
+    # Workflow-level `env: { CI_METRICS_ENABLED: 'true'|'false' }` always wins over the file.
     # The step also mutates the file in the workflow-env override cases so the runner's post-job hook follows.
     - name: Resolve CI metrics gate
       id: ci-metrics-gate
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' || env.CI_METRICS_ENABLED == 'true'
       shell: bash
       run: |
         echo "::group::CI metrics gate"

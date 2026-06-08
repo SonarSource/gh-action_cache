@@ -258,15 +258,35 @@ describe('cache-metrics-main', () => {
     expect(record.restore_key_hit).toBe(expected);
   });
 
-  it('skips on non-linux platforms', async () => {
+  it('writes JSON on non-Linux with null size fields; does not set cache-size-bytes output', async () => {
     const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
     Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+    const inputs: Record<string, string> = {
+      path: tmp,
+      key: 'python-Darwin-abc',
+      'cache-hit': 'false',
+      'matched-key': '',
+      backend: 's3',
+      'lookup-only': 'false',
+      'step-id': 'cache-python',
+    };
+    vi.mocked(core.getInput).mockImplementation((name) => inputs[name] ?? '');
 
     try {
       const { run } = await import('../src/cache-metrics-main');
       await run();
+
+      const written = path.join(tmp, 'cache-cache-python.json');
+      const record = JSON.parse(fs.readFileSync(written, 'utf-8'));
+      expect(record.key).toBe('python-Darwin-abc');
+      expect(record.size_bytes_restored).toBeNull();
+      expect(record.size_bytes_at_end).toBeNull();
+      expect(record.timestamp_restored).toMatch(/Z$/);
+      // cache-size-bytes must NOT be set on non-Linux
       expect(core.setOutput).not.toHaveBeenCalled();
-      expect(core.saveState).not.toHaveBeenCalled();
+      // state must still be saved so the post step can update the record
+      expect(core.saveState).toHaveBeenCalledWith('metricsFile', written);
     } finally {
       if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
     }
@@ -388,27 +408,47 @@ describe('cache-metrics-post', () => {
   it('skips when no state was saved (main step did not run)', async () => {
     vi.mocked(core.getState).mockReturnValue('');
 
-    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
-    Object.defineProperty(process, 'platform', { value: 'linux' });
-    try {
-      const { run } = await import('../src/cache-metrics-post');
-      await run();
-      expect(core.info).toHaveBeenCalledWith(
-        expect.stringContaining('no state from main step')
-      );
-    } finally {
-      if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
-    }
+    const { run } = await import('../src/cache-metrics-post');
+    await run();
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining('no state from main step')
+    );
   });
 
-  it('skips on non-linux platforms', async () => {
+  it('writes JSON on non-Linux with null size_bytes_at_end', async () => {
     const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
     Object.defineProperty(process, 'platform', { value: 'darwin' });
 
+    const metricsFile = path.join(tmp, 'cache-x.json');
+    writeMetricsFile(metricsFile, {
+      step: 'x',
+      key: 'k',
+      restore_key_hit: null,
+      backend: 's3',
+      cache_hit: false,
+      size_bytes_restored: null,
+      size_bytes_at_end: null,
+      saved: null,
+      timestamp_restored: '2026-05-12T00:00:00Z',
+      timestamp_at_end: null,
+    });
+
+    const state: Record<string, string> = {
+      metricsFile,
+      path: tmp,
+      cacheHit: 'false',
+      lookupOnly: 'false',
+    };
+    vi.mocked(core.getState).mockImplementation((name) => state[name] ?? '');
+
     try {
       const { run } = await import('../src/cache-metrics-post');
       await run();
-      expect(core.getState).not.toHaveBeenCalled();
+
+      const updated = JSON.parse(fs.readFileSync(metricsFile, 'utf-8'));
+      expect(updated.size_bytes_at_end).toBeNull();
+      expect(updated.saved).toBe(true);
+      expect(updated.timestamp_at_end).toMatch(/Z$/);
     } finally {
       if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
     }

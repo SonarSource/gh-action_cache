@@ -150,15 +150,17 @@ gh variable set CACHE_IMPORT_GITHUB --body "true"
 | `cache-matched-key` | The cache key for which a match was found — primary key on an exact hit, restore key on a partial hit, empty on a miss.                       |
 | `restore-key-hit`   | The restore key that was prefix-matched. Populated only when `cache-hit` is `false` AND a restore key matched (partial hit). Empty otherwise. |
 | `backend`           | The cache backend that was actually used (`github` or `s3`).                                                                                  |
-| `cache-size-bytes`  | Total size in bytes of the cached path(s) at restore-time (Linux only; empty on other platforms).                                             |
+| `cache-size-bytes`  | Total size in bytes of the cached path(s) at restore-time. Requires GNU `du` (Linux); empty on other platforms.                               |
 
 ### Pipeline runtime metrics
 
-On Linux runners — and only when the layered gate below resolves to "on" — the action writes a per-invocation JSON record to
+When the gate resolves to "on", the action writes a per-invocation JSON record to
 `${CI_METRICS_DIR}/cache-${step}.json` for the [pipeline runtime metrics](https://sonarsource.atlassian.net/browse/BUILD-11068)
 `job-completed.sh` hook to ingest. The output directory is taken from the `CI_METRICS_DIR` environment variable (provided by the
 ARC pod template / WarpBuild AMI); it falls back to `/tmp/ci-metrics` when the variable is unset or empty.
-The record captures both the restore-time size and the pre-save size, plus whether the cache was actually saved.
+The record is written on all platforms once the gate resolves to "on" (see Gate resolution below).
+Size fields (`size_bytes_restored`, `size_bytes_at_end`) are `null` on non-Linux (no GNU `du`);
+all other fields (`cache_hit`, `restore_key_hit`, `backend`, `saved`, timestamps, `key`) are populated on every platform.
 
 **Gate resolution** ([BUILD-11295](https://sonarsource.atlassian.net/browse/BUILD-11295)):
 

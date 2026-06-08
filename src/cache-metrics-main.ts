@@ -34,14 +34,14 @@ export async function run(): Promise<void> {
     const record: CacheMetricsRecord = {
       step: slug,
       key: inputs.key,
-      'restore-key-hit': restoreKeyHit,
+      restore_key_hit: restoreKeyHit,
       backend: inputs.backend,
-      'cache-hit': inputs.cacheHit,
-      'size-bytes-restored': sizeBytes,
-      'size-bytes-at-end': null,
+      cache_hit: inputs.cacheHit,
+      size_bytes_restored: sizeBytes,
+      size_bytes_at_end: null,
       saved: null,
-      'timestamp-restored': timestamp,
-      'timestamp-at-end': null,
+      timestamp_restored: timestamp,
+      timestamp_at_end: null,
     };
 
     writeMetricsFile(file, record);

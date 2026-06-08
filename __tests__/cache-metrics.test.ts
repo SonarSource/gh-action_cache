@@ -122,18 +122,18 @@ describe('metricsFilePath / read / write', () => {
     writeMetricsFile(target, {
       step: 'x',
       key: 'k',
-      'restore-key-hit': null,
+      restore_key_hit: null,
       backend: 'github',
-      'cache-hit': false,
-      'size-bytes-restored': 0,
-      'size-bytes-at-end': null,
+      cache_hit: false,
+      size_bytes_restored: 0,
+      size_bytes_at_end: null,
       saved: null,
-      'timestamp-restored': '2026-05-12T00:00:00Z',
-      'timestamp-at-end': null,
+      timestamp_restored: '2026-05-12T00:00:00Z',
+      timestamp_at_end: null,
     });
     const parsed = JSON.parse(fs.readFileSync(target, 'utf-8'));
     expect(parsed.step).toBe('x');
-    expect(parsed['size-bytes-at-end']).toBeNull();
+    expect(parsed.size_bytes_at_end).toBeNull();
   });
 
   it('readMetricsFile returns {} for missing or invalid files', () => {
@@ -217,13 +217,13 @@ describe('cache-metrics-main', () => {
     expect(record.step).toBe('cache-python');
     expect(record.key).toBe('python-Linux-abc');
     expect(record.backend).toBe('s3');
-    expect(record['cache-hit']).toBe(true);
+    expect(record.cache_hit).toBe(true);
     // Exact hit: matched-key == primary key → restore-key-hit must be null.
-    expect(record['restore-key-hit']).toBeNull();
-    expect(record['size-bytes-restored']).toBeGreaterThanOrEqual(4096);
-    expect(record['size-bytes-at-end']).toBeNull();
+    expect(record.restore_key_hit).toBeNull();
+    expect(record.size_bytes_restored).toBeGreaterThanOrEqual(4096);
+    expect(record.size_bytes_at_end).toBeNull();
     expect(record.saved).toBeNull();
-    expect(record['timestamp-restored']).toMatch(/Z$/);
+    expect(record.timestamp_restored).toMatch(/Z$/);
 
     expect(core.setOutput).toHaveBeenCalledWith(
       'cache-size-bytes',
@@ -255,7 +255,7 @@ describe('cache-metrics-main', () => {
     const record = JSON.parse(
       fs.readFileSync(path.join(tmp, 'cache-cache-python.json'), 'utf-8')
     );
-    expect(record['restore-key-hit']).toBe(expected);
+    expect(record.restore_key_hit).toBe(expected);
   });
 
   it('skips on non-linux platforms', async () => {
@@ -313,14 +313,14 @@ describe('cache-metrics-post', () => {
       writeMetricsFile(metricsFile, {
         step: 'cache-python',
         key: 'k',
-        'restore-key-hit': null,
+        restore_key_hit: null,
         backend: 's3',
-        'cache-hit': false,
-        'size-bytes-restored': 0,
-        'size-bytes-at-end': null,
+        cache_hit: false,
+        size_bytes_restored: 0,
+        size_bytes_at_end: null,
         saved: null,
-        'timestamp-restored': '2026-05-12T10:00:00Z',
-        'timestamp-at-end': null,
+        timestamp_restored: '2026-05-12T10:00:00Z',
+        timestamp_at_end: null,
       });
 
       const state: Record<string, string> = {
@@ -335,12 +335,12 @@ describe('cache-metrics-post', () => {
       await run();
 
       const updated = JSON.parse(fs.readFileSync(metricsFile, 'utf-8'));
-      expect(updated['size-bytes-at-end']).toBeGreaterThanOrEqual(8192);
+      expect(updated.size_bytes_at_end).toBeGreaterThanOrEqual(8192);
       expect(updated.saved).toBe(true);
-      expect(updated['timestamp-at-end']).toMatch(/Z$/);
+      expect(updated.timestamp_at_end).toMatch(/Z$/);
       // restore-time fields preserved
       expect(updated.step).toBe('cache-python');
-      expect(updated['timestamp-restored']).toBe('2026-05-12T10:00:00Z');
+      expect(updated.timestamp_restored).toBe('2026-05-12T10:00:00Z');
     }
   );
 
@@ -360,14 +360,14 @@ describe('cache-metrics-post', () => {
     writeMetricsFile(metricsFile, {
       step: stepName,
       key: 'k',
-      'restore-key-hit': null,
+      restore_key_hit: null,
       backend,
-      'cache-hit': cacheHit,
-      'size-bytes-restored': cacheHit ? 100 : 0,
-      'size-bytes-at-end': null,
+      cache_hit: cacheHit,
+      size_bytes_restored: cacheHit ? 100 : 0,
+      size_bytes_at_end: null,
       saved: null,
-      'timestamp-restored': '2026-05-12T00:00:00Z',
-      'timestamp-at-end': null,
+      timestamp_restored: '2026-05-12T00:00:00Z',
+      timestamp_at_end: null,
     });
 
     const state: Record<string, string> = {

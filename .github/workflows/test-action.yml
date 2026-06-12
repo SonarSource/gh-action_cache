@@ -188,6 +188,55 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
+  # Reproduces: runs-on/cache S3 restore ignores enableCrossOsArchive on Windows
+  # Linux save with enableCrossOsArchive=true → Windows restore must hit same S3 key
+  test-s3-cache-cross-os-save-linux:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create cross-OS cache payload
+        run: echo "cross-os-test-${{ github.run_id }}" > .cross-os-cache-test.txt
+      - name: Save to S3 with cross-OS archive
+        uses: ./
+        with:
+          path: .cross-os-cache-test.txt
+          key: cross-os-s3-${{ github.run_id }}
+          environment: dev
+          backend: s3
+          enableCrossOsArchive: true
+          import-github-cache: false
+
+  test-s3-cache-cross-os-restore-windows:
+    needs: test-s3-cache-cross-os-save-linux
+    runs-on: github-windows-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Restore from S3 with cross-OS archive
+        id: cache-restore
+        uses: ./
+        with:
+          path: .cross-os-cache-test.txt
+          key: cross-os-s3-${{ github.run_id }}
+          environment: dev
+          backend: s3
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+          import-github-cache: false
+      - name: Verify cache hit and restored content
+        shell: bash
+        run: |
+          if [[ "${{ steps.cache-restore.outputs.cache-hit }}" != "true" ]]; then
+            echo "::error::Expected cache-hit=true when restoring Linux S3 cache on Windows with enableCrossOsArchive=true"
+            exit 1
+          fi
+          grep -q "cross-os-test-${{ github.run_id }}" .cross-os-cache-test.txt
+
   # Reproduces: ~/.aws/config corruption from multiple credential_process entries
   test-s3-cache-multiple-invocations:
     runs-on: github-ubuntu-latest-s
@@ -550,6 +599,8 @@ jobs:
       - test-s3-cache-with-fallback
       - test-s3-cache-with-credential-interference
       - test-s3-cache-windows
+      - test-s3-cache-cross-os-save-linux
+      - test-s3-cache-cross-os-restore-windows
       - test-s3-cache-multiple-invocations
       - test-s3-cache-with-preset-aws-config
       - test-s3-cache-survives-git-clean

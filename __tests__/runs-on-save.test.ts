@@ -1,11 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+type ExitHandler = (code: number | null, signal: string | null) => void;
+type ErrorHandler = (err: Error) => void;
+type ChildHandler = ExitHandler | ErrorHandler;
+type ForkCall = [string, string[], { env: Record<string, string> }];
+
 // vi.mock is hoisted above module-level declarations, so the shared mock state it
 // closes over must be created via vi.hoisted() to avoid a temporal-dead-zone error.
 const { onHandlers, fakeChild, fork } = vi.hoisted(() => {
-  const onHandlers: Record<string, (...a: any[]) => void> = {};
-  const fakeChild: any = {
-    on: vi.fn((evt: string, cb: (...a: any[]) => void) => { onHandlers[evt] = cb; return fakeChild; }),
+  const onHandlers: Record<string, ChildHandler> = {};
+  const fakeChild = {
+    on: vi.fn((evt: string, cb: ChildHandler) => {
+      onHandlers[evt] = cb;
+      return fakeChild;
+    }),
   };
   const fork = vi.fn(() => fakeChild);
   return { onHandlers, fakeChild, fork };
@@ -27,7 +35,7 @@ describe('runRunsOnSave', () => {
     await expect(p).resolves.toBeUndefined();
 
     expect(fork).toHaveBeenCalledTimes(1);
-    const [scriptPath, args, opts] = fork.mock.calls[0] as any[];
+    const [scriptPath, , opts] = fork.mock.calls[0] as ForkCall;
     expect(scriptPath).toContain('runs-on-save-only');
     expect(scriptPath).toContain('index.js');
     expect(opts.env.INPUT_KEY).toBe('refs/heads/feature/x/gradle-abc');
@@ -38,8 +46,8 @@ describe('runRunsOnSave', () => {
   it('resolves the vendored bundle outside the dist/post dir', () => {
     const p = runRunsOnSave({ key: 'k', path: 'p', enableCrossOsArchive: false });
     onHandlers['exit'](0, null);
-    const [scriptPath] = fork.mock.calls[0] as any[];
-    const norm = scriptPath.replace(/\\/g, '/');
+    const [scriptPath] = fork.mock.calls[0] as ForkCall;
+    const norm = scriptPath.replaceAll('\\', '/');
     expect(norm.endsWith('/vendor/runs-on-save-only/index.js')).toBe(true);
     expect(norm.includes('/dist/')).toBe(false);
     return p;

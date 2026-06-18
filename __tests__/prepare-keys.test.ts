@@ -9,6 +9,9 @@ const SCRIPT = path.join(__dirname, '..', 'scripts', 'prepare-keys.sh');
 function runScript(env: Record<string, string>): Record<string, string> {
   const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pk-')), 'out');
   fs.writeFileSync(outFile, '');
+  // Inherit process.env so `bash` is resolved via the platform PATH (git-bash on Windows,
+  // /usr/bin on *nix). This is a test harness invoking a trusted in-repo script — the
+  // Sonar S4036 PATH hotspot is reviewed-safe here and pinning PATH would break portability.
   execFileSync('bash', [SCRIPT], {
     env: {
       ...process.env,

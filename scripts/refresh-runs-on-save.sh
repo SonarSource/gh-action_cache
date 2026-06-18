@@ -15,4 +15,4 @@ cp "$TMP/cache/dist/save-only/"*.js "$DEST/"
 cp "$TMP/cache/LICENSE" "$DEST/LICENSE"
 echo "Vendored runs-on/cache dist/save-only @ $SHA into $DEST"
 echo "Now update PROVENANCE.md (SHA, retrieved date, checksum table):"
-( cd "$DEST" && shasum -a 256 *.js )
+( cd "$DEST" && shasum -a 256 ./*.js )

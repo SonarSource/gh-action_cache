@@ -307,11 +307,11 @@ The skip is **content-aware**, not just key-based: the action fingerprints the c
 the content is unchanged. So if a build enriches the cached directory under a stable key (e.g. `~/.gradle` or `~/.m2` gaining transitive
 artifacts), the branch-scoped save still happens. When the fingerprint cannot be computed, the action errs toward saving.
 
-> **Limitation:** the fingerprint uses each file's path and size, so a same-size in-place edit (same path, identical byte length) is not
-> detected. This does not affect content-addressed caches (npm, pip, Gradle, Maven), where changed artifacts land at new paths.
-
-> **Known limitation:** `upload-chunk-size` is currently not applied on the S3 save path — the conditional save step does not thread it
-> through.
+> **Limitations:**
+>
+> - The fingerprint uses each file's path and size, so a same-size in-place edit (same path, identical byte length) is not detected. This
+>   does not affect content-addressed caches (npm, pip, Gradle, Maven), where changed artifacts land at new paths.
+> - `upload-chunk-size` is currently not applied on the S3 save path — the conditional save step does not thread it through.
 
 ### Environment Configuration
 

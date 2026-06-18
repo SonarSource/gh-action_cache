@@ -40,4 +40,11 @@ describe('cache-save-main', () => {
     expect(core.saveState).toHaveBeenCalledWith('skip-redundant-save', 'true');
     expect(core.saveState).toHaveBeenCalledWith('enable-cross-os-archive', 'false');
   });
+
+  it('calls setFailed when an input read throws', async () => {
+    vi.mocked(core.getInput).mockImplementation(() => { throw new Error('boom'); });
+    const { run } = await import('../src/cache-save-main');
+    await run();
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('cache-save setup failed'));
+  });
 });

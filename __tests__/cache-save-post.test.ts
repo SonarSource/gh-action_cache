@@ -77,4 +77,27 @@ describe('cache-save-post', () => {
 
     expect(runRunsOnSave).toHaveBeenCalledOnce();
   });
+
+  it('does not save when lookup-only was set', async () => {
+    setState({
+      key: 'refs/heads/feature/x/gradle-abc',
+      path: 'node_modules',
+      'matched-key': '',
+      'fallback-exact-key': 'refs/heads/master/gradle-abc',
+      'lookup-only': 'true',
+      'skip-redundant-save': 'true',
+      'enable-cross-os-archive': 'false',
+    });
+    const { run } = await import('../src/cache-save-post');
+    await run();
+    expect(runRunsOnSave).not.toHaveBeenCalled();
+  });
+
+  it('warns and does not save when no key is in state', async () => {
+    setState({}); // all empty
+    const { run } = await import('../src/cache-save-post');
+    await run();
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('No cache key'));
+    expect(runRunsOnSave).not.toHaveBeenCalled();
+  });
 });

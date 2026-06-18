@@ -44,6 +44,12 @@ inputs:
       Import GitHub cache to S3 when no S3 cache exists (migration mode). Enabled by default when using S3 backend.
       Set to 'false' to disable, or control via the CACHE_IMPORT_GITHUB environment variable.
     default: ''
+  skip-redundant-save:
+    description: >
+      Skip saving the branch-scoped cache when the restored content is byte-identical to the default-branch
+      cache (S3 backend only). Avoids uploading a duplicate of the default-branch cache on feature branches
+      that did not change the cached content. Set to 'false' to always save.
+    default: 'true'
 
 outputs:
   cache-hit:
@@ -332,7 +338,7 @@ runs:
         matched-key: ${{ steps.s3-cache.outputs.cache-matched-key }}
         fallback-exact-key: ${{ steps.prepare-keys.outputs.fallback-exact-key }}
         lookup-only: ${{ inputs.lookup-only }}
-        skip-redundant-save: 'true'
+        skip-redundant-save: ${{ inputs.skip-redundant-save }}
         enable-cross-os-archive: ${{ inputs.enableCrossOsArchive }}
 
     - name: Credential guard for S3 cache save

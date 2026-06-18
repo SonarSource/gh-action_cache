@@ -2,13 +2,39 @@ import { describe, it, expect } from 'vitest';
 import { shouldSkipSave } from '../src/cache-save-decision';
 
 describe('shouldSkipSave', () => {
+  const KEY = 'refs/heads/feature/x/gradle-abc';
   const fallbackExact = 'refs/heads/master/gradle-abc';
   const D1 = 'digest-aaa';
   const D2 = 'digest-bbb';
 
+  it('skips on an exact primary-key hit, regardless of digests (upstream parity)', () => {
+    expect(
+      shouldSkipSave({
+        key: KEY,
+        matchedKey: KEY,
+        fallbackExactKey: fallbackExact,
+        lookupOnly: false,
+        enabled: true,
+      })
+    ).toEqual({ skip: true, reason: 'exact-key-hit' });
+  });
+
+  it('skips on an exact primary-key hit even when the optimization is disabled', () => {
+    expect(
+      shouldSkipSave({
+        key: KEY,
+        matchedKey: KEY,
+        fallbackExactKey: fallbackExact,
+        lookupOnly: false,
+        enabled: false,
+      }).skip
+    ).toBe(true);
+  });
+
   it('skips when key matches the fallback AND content is unchanged', () => {
     expect(
       shouldSkipSave({
+        key: KEY,
         matchedKey: fallbackExact,
         fallbackExactKey: fallbackExact,
         lookupOnly: false,
@@ -22,6 +48,7 @@ describe('shouldSkipSave', () => {
   it('saves when key matches the fallback but content changed since restore', () => {
     expect(
       shouldSkipSave({
+        key: KEY,
         matchedKey: fallbackExact,
         fallbackExactKey: fallbackExact,
         lookupOnly: false,
@@ -35,6 +62,7 @@ describe('shouldSkipSave', () => {
   it('saves when the baseline digest is unavailable (walk skipped/failed)', () => {
     expect(
       shouldSkipSave({
+        key: KEY,
         matchedKey: fallbackExact,
         fallbackExactKey: fallbackExact,
         lookupOnly: false,
@@ -48,6 +76,7 @@ describe('shouldSkipSave', () => {
   it('saves when the final digest is unavailable', () => {
     expect(
       shouldSkipSave({
+        key: KEY,
         matchedKey: fallbackExact,
         fallbackExactKey: fallbackExact,
         lookupOnly: false,
@@ -61,6 +90,7 @@ describe('shouldSkipSave', () => {
   it('saves (NOT skips) when BOTH digests are empty — the empty-equality trap', () => {
     expect(
       shouldSkipSave({
+        key: KEY,
         matchedKey: fallbackExact,
         fallbackExactKey: fallbackExact,
         lookupOnly: false,
@@ -74,6 +104,7 @@ describe('shouldSkipSave', () => {
   it('saves when matched key is a prefix restore-key hit (different content), regardless of digests', () => {
     expect(
       shouldSkipSave({
+        key: KEY,
         matchedKey: 'refs/heads/master/gradle-OLDER',
         fallbackExactKey: fallbackExact,
         lookupOnly: false,
@@ -99,6 +130,7 @@ describe('shouldSkipSave', () => {
   it('never skips when the optimization is disabled, even with matching digests', () => {
     expect(
       shouldSkipSave({
+        key: KEY,
         matchedKey: fallbackExact,
         fallbackExactKey: fallbackExact,
         lookupOnly: false,
@@ -109,10 +141,11 @@ describe('shouldSkipSave', () => {
     ).toBe(false);
   });
 
-  it('saves when there is no fallback exact key configured', () => {
+  it('saves when there is no fallback exact key configured (and no exact primary hit)', () => {
     expect(
       shouldSkipSave({
-        matchedKey: 'refs/heads/feature/x/gradle-abc',
+        key: KEY,
+        matchedKey: 'refs/heads/master/gradle-OLDER',
         fallbackExactKey: '',
         lookupOnly: false,
         enabled: true,

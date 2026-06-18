@@ -44,6 +44,17 @@ describe('cache-save-post', () => {
     computeContentDigest.mockResolvedValue('DIGEST_A'); // default: content unchanged
   });
 
+  it('skips on an exact primary-key hit without walking (warm rerun)', async () => {
+    setState(candidateState({ 'matched-key': KEY, 'baseline-digest': '' }));
+
+    const { run } = await import('../src/cache-save-post');
+    await run();
+
+    expect(computeContentDigest).not.toHaveBeenCalled();
+    expect(runRunsOnSave).not.toHaveBeenCalled();
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining('primary key'));
+  });
+
   it('skips when fallback restored AND content unchanged (final digest == baseline)', async () => {
     setState(candidateState());
     computeContentDigest.mockResolvedValue('DIGEST_A');

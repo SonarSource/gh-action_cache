@@ -24,6 +24,7 @@ export async function run(): Promise<void> {
     const finalDigest = baselineDigest ? await computeContentDigest(path) : '';
 
     const decision = shouldSkipSave({
+      key,
       matchedKey,
       fallbackExactKey,
       lookupOnly,
@@ -32,7 +33,9 @@ export async function run(): Promise<void> {
       finalDigest,
     });
     if (decision.skip) {
-      if (decision.reason === 'restored-from-default-branch-fallback') {
+      if (decision.reason === 'exact-key-hit') {
+        core.info(`Cache hit on the primary key '${key}'; not saving.`);
+      } else if (decision.reason === 'restored-from-default-branch-fallback') {
         core.info(
           `Cache content is identical to the default-branch cache ` +
             `(restored '${matchedKey}'); skipping redundant save of '${key}'.`

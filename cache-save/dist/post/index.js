@@ -37099,10 +37099,17 @@ function shouldSkipSave(input) {
     if (input.lookupOnly) {
         return { skip: true, reason: 'lookup-only' };
     }
+    // Exact primary-key hit: the branch already has this exact cache. Skipping here is the standard
+    // actions/cache behaviour ("cache hit on the primary key, not saving") and is independent of the
+    // skip-redundant-save optimisation — re-uploading byte-identical content on every warm rerun is
+    // pure waste. No content walk needed: an exact key hit means the key (content identity) matched.
+    if (input.key && input.matchedKey === input.key) {
+        return { skip: true, reason: 'exact-key-hit' };
+    }
     if (!input.enabled) {
         return { skip: false, reason: 'optimization-disabled' };
     }
-    // Not even a key-level skip candidate: the restore did not match the default-branch fallback.
+    // Not a fallback skip candidate: the restore did not match the default-branch fallback.
     if (!input.fallbackExactKey || input.matchedKey !== input.fallbackExactKey) {
         return { skip: false, reason: 'content-may-differ' };
     }
@@ -37183,6 +37190,7 @@ async function run() {
         const baselineDigest = core.getState('baseline-digest');
         const finalDigest = baselineDigest ? await (0, content_manifest_1.computeContentDigest)(path) : '';
         const decision = (0, cache_save_decision_1.shouldSkipSave)({
+            key,
             matchedKey,
             fallbackExactKey,
             lookupOnly,
@@ -37191,7 +37199,10 @@ async function run() {
             finalDigest,
         });
         if (decision.skip) {
-            if (decision.reason === 'restored-from-default-branch-fallback') {
+            if (decision.reason === 'exact-key-hit') {
+                core.info(`Cache hit on the primary key '${key}'; not saving.`);
+            }
+            else if (decision.reason === 'restored-from-default-branch-fallback') {
                 core.info(`Cache content is identical to the default-branch cache ` +
                     `(restored '${matchedKey}'); skipping redundant save of '${key}'.`);
             }

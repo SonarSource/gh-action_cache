@@ -1,4 +1,6 @@
 export interface SaveDecisionInput {
+  /** The branch-scoped primary key this run would save under. */
+  key: string;
   /** The cache-matched-key reported by the restore step ('' if cache miss). */
   matchedKey: string;
   /** The fallback exact key from prepare-keys.sh ('' if none configured). */
@@ -34,10 +36,17 @@ export function shouldSkipSave(input: SaveDecisionInput): SaveDecision {
   if (input.lookupOnly) {
     return { skip: true, reason: 'lookup-only' };
   }
+  // Exact primary-key hit: the branch already has this exact cache. Skipping here is the standard
+  // actions/cache behaviour ("cache hit on the primary key, not saving") and is independent of the
+  // skip-redundant-save optimisation — re-uploading byte-identical content on every warm rerun is
+  // pure waste. No content walk needed: an exact key hit means the key (content identity) matched.
+  if (input.key && input.matchedKey === input.key) {
+    return { skip: true, reason: 'exact-key-hit' };
+  }
   if (!input.enabled) {
     return { skip: false, reason: 'optimization-disabled' };
   }
-  // Not even a key-level skip candidate: the restore did not match the default-branch fallback.
+  // Not a fallback skip candidate: the restore did not match the default-branch fallback.
   if (!input.fallbackExactKey || input.matchedKey !== input.fallbackExactKey) {
     return { skip: false, reason: 'content-may-differ' };
   }

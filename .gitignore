@@ -17,6 +17,8 @@ cache-metrics/dist/**/*.d.ts
 cache-metrics/dist/**/*.d.ts.map
 symlink-keeper/dist/**/*.d.ts
 symlink-keeper/dist/**/*.d.ts.map
+cache-save/dist/**/*.d.ts
+cache-save/dist/**/*.d.ts.map
 
 # Test coverage
 coverage/

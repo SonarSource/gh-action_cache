@@ -35,6 +35,16 @@ describe('runRunsOnSave', () => {
     expect(opts.env.INPUT_ENABLECROSSOSARCHIVE).toBe('false');
   });
 
+  it('resolves the vendored bundle outside the dist/post dir', () => {
+    const p = runRunsOnSave({ key: 'k', path: 'p', enableCrossOsArchive: false });
+    onHandlers['exit'](0, null);
+    const [scriptPath] = fork.mock.calls[0] as any[];
+    const norm = scriptPath.replace(/\\/g, '/');
+    expect(norm.endsWith('/vendor/runs-on-save-only/index.js')).toBe(true);
+    expect(norm.includes('/dist/')).toBe(false);
+    return p;
+  });
+
   it('rejects when the child exits non-zero', async () => {
     const p = runRunsOnSave({ key: 'k', path: 'p', enableCrossOsArchive: false });
     onHandlers['exit'](1, null);

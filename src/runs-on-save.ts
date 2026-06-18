@@ -13,8 +13,8 @@ export function runRunsOnSave(opts: {
   path: string;
   enableCrossOsArchive: boolean;
 }): Promise<void> {
-  // NOTE: __dirname-relative path is finalized in Task 6 build wiring
-  const bundle = path.join(__dirname, '..', 'vendor', 'runs-on-save-only', 'index.js');
+  // Resolved at runtime from the built post bundle (cache-save/dist/post/) up to cache-save/vendor/runs-on-save-only/index.js
+  const bundle = path.join(__dirname, '..', '..', 'vendor', 'runs-on-save-only', 'index.js');
   return new Promise<void>((resolve, reject) => {
     const child = fork(bundle, [], {
       env: {

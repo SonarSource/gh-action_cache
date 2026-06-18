@@ -50,4 +50,10 @@ describe('runRunsOnSave', () => {
     onHandlers['exit'](1, null);
     await expect(p).rejects.toThrow(/exit code 1/);
   });
+
+  it('rejects reporting the signal when the child is killed', async () => {
+    const p = runRunsOnSave({ key: 'k', path: 'p', enableCrossOsArchive: false });
+    onHandlers['exit'](null, 'SIGKILL');
+    await expect(p).rejects.toThrow(/signal SIGKILL/);
+  });
 });

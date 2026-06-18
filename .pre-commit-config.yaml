@@ -10,12 +10,13 @@ repos:
     rev: v6.0.0
     hooks:
       # ncc-bundled sub-actions live in <sub-action>/dist/ and we don't control their formatting.
+      # cache-save/vendor/ holds the third-party runs-on/cache save bundle, also not ours to reformat.
       - id: trailing-whitespace
-        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/|symlink-keeper/dist/)
+        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/|symlink-keeper/dist/|cache-save/dist/|cache-save/vendor/)
       - id: end-of-file-fixer
-        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/|symlink-keeper/dist/)
+        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/|symlink-keeper/dist/|cache-save/dist/|cache-save/vendor/)
       - id: check-added-large-files
-        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/|symlink-keeper/dist/)
+        exclude: ^(credential-setup/dist/|credential-guard/dist/|cache-metrics/dist/|symlink-keeper/dist/|cache-save/dist/|cache-save/vendor/)
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.48.0
     hooks:

@@ -1,6 +1,6 @@
 # Vendored: runs-on/cache save-only bundle
 
-- **Source:** https://github.com/runs-on/cache
+- **Source:** <https://github.com/runs-on/cache>
 - **Ref (SHA):** 88d90644011a3a9957fd141a106f5a94f9794203 (tag v5.0.7)
 - **Path in source:** dist/save-only/
 - **Retrieved:** 2026-06-18
@@ -14,7 +14,7 @@
 ## SHA256 (verify with: `shasum -a 256 *.js`)
 
 | File | SHA256 |
-|------|--------|
+| --- | --- |
 | index.js | df72860fb99537d3ce6fc6bc3e702c7a6414cbe4ea4757e5ad211d69f8ae1479 |
 | 136.index.js | debf6b87c85fe54f51c8ed4410fbd2572d01f4e0609c0e251bac6e1260de69a7 |
 | 360.index.js | 0d04da07d1d1afb3a7475c2288eaecfa85cddf1f4e23b07f04ed9bfd98ee3050 |

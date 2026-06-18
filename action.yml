@@ -327,7 +327,9 @@ runs:
     - name: Conditional S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3' && inputs.lookup-only != 'true'
       id: cache-save
-      uses: SonarSource/gh-action_cache/cache-save@v1
+      # TODO(BUILD-11220): revert to @v1 once this branch is merged and a v1 tag including cache-save exists.
+      # The cache-save sub-action is new in this PR, so it does not yet exist on the v1 tag.
+      uses: SonarSource/gh-action_cache/cache-save@feat/mmatuszny/BUILD-11220-skip-redundant-cache-save
       env:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
         AWS_DEFAULT_REGION: eu-central-1

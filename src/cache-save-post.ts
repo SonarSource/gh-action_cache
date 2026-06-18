@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
 import { shouldSkipSave } from './cache-save-decision';
+import { computeContentDigest } from './content-manifest';
 import { runRunsOnSave } from './runs-on-save';
 
 export async function run(): Promise<void> {
@@ -17,7 +18,19 @@ export async function run(): Promise<void> {
       return;
     }
 
-    const decision = shouldSkipSave({ matchedKey, fallbackExactKey, lookupOnly, enabled });
+    // Only recompute the content digest if the main step recorded a baseline (i.e. this was a
+    // skip candidate). Otherwise there is nothing to compare against and we save unconditionally.
+    const baselineDigest = core.getState('baseline-digest');
+    const finalDigest = baselineDigest ? await computeContentDigest(path) : '';
+
+    const decision = shouldSkipSave({
+      matchedKey,
+      fallbackExactKey,
+      lookupOnly,
+      enabled,
+      baselineDigest,
+      finalDigest,
+    });
     if (decision.skip) {
       if (decision.reason === 'restored-from-default-branch-fallback') {
         core.info(
@@ -30,7 +43,11 @@ export async function run(): Promise<void> {
       return;
     }
 
-    core.info(`Saving cache with key '${key}'`);
+    if (decision.reason === 'content-changed-since-restore') {
+      core.info(`Cache content changed since restore; saving '${key}'.`);
+    } else {
+      core.info(`Saving cache with key '${key}'`);
+    }
     await runRunsOnSave({ key, path, enableCrossOsArchive });
   } catch (error) {
     core.warning(`Cache save failed: ${error instanceof Error ? error.message : error}`);

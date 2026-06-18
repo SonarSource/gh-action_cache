@@ -24,10 +24,24 @@ export function runRunsOnSave(opts: {
         INPUT_ENABLECROSSOSARCHIVE: String(opts.enableCrossOsArchive),
       },
     });
-    child.on('error', reject);
-    child.on('exit', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`runs-on save failed with exit code ${code}`));
+    // Settle exactly once: 'error' (e.g. spawn failure) can fire and then 'exit' may still fire.
+    let settled = false;
+    const done = (fn: () => void): void => {
+      if (!settled) {
+        settled = true;
+        fn();
+      }
+    };
+    child.on('error', (err) => done(() => reject(err)));
+    child.on('exit', (code, signal) => {
+      done(() => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        const detail = signal ? `signal ${signal}` : `exit code ${code}`;
+        reject(new Error(`runs-on save failed with ${detail}`));
+      });
     });
   });
 }

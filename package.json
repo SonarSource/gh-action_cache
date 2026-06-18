@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
+    "@actions/glob": "^0.5.1",
     "@aws-sdk/client-cognito-identity": "^3.750.0"
   },
   "overrides": {

@@ -31069,14 +31069,11 @@ const core = __importStar(__nccwpck_require__(7484));
 const cache_metrics_1 = __nccwpck_require__(5945);
 async function run() {
     try {
-        if (process.platform !== 'linux') {
-            core.info(`cache-metrics: skipping on platform ${process.platform} (Linux-only)`);
-            return;
-        }
         const inputs = (0, cache_metrics_1.readInputs)();
         const slug = (0, cache_metrics_1.slugifyStepId)(inputs.stepId);
         const file = (0, cache_metrics_1.metricsFilePath)(inputs.metricsDir, slug);
-        const sizeBytes = (0, cache_metrics_1.measureCacheBytes)(inputs.path);
+        // Size measurement requires GNU `du -sb` (Linux only); null on other platforms.
+        const sizeBytes = process.platform === 'linux' ? (0, cache_metrics_1.measureCacheBytes)(inputs.path) : null;
         const timestamp = new Date().toISOString();
         // `matchedKey` is the underlying cache action's `cache-matched-key` output:
         //   - exact hit  → equal to `inputs.key` (the primary key); `cacheHit` is true.
@@ -31089,23 +31086,26 @@ async function run() {
         const record = {
             step: slug,
             key: inputs.key,
-            'restore-key-hit': restoreKeyHit,
+            restore_key_hit: restoreKeyHit,
             backend: inputs.backend,
-            'cache-hit': inputs.cacheHit,
-            'size-bytes-restored': sizeBytes,
-            'size-bytes-at-end': null,
+            cache_hit: inputs.cacheHit,
+            size_bytes_restored: sizeBytes,
+            size_bytes_at_end: null,
             saved: null,
-            'timestamp-restored': timestamp,
-            'timestamp-at-end': null,
+            timestamp_restored: timestamp,
+            timestamp_at_end: null,
         };
         (0, cache_metrics_1.writeMetricsFile)(file, record);
-        core.setOutput('cache-size-bytes', sizeBytes);
+        if (sizeBytes !== null) {
+            core.setOutput('cache-size-bytes', sizeBytes);
+        }
         // Stash inputs for the post step (it does not receive `with:` again).
         core.saveState('metricsFile', file);
         core.saveState('path', inputs.path);
         core.saveState('cacheHit', inputs.cacheHit ? 'true' : 'false');
         core.saveState('lookupOnly', inputs.lookupOnly ? 'true' : 'false');
-        core.info(`cache-metrics: restored size = ${sizeBytes} B, metrics written to ${file}`);
+        const sizeMsg = sizeBytes === null ? 'n/a (non-Linux)' : `${sizeBytes} B`;
+        core.info(`cache-metrics: restored size = ${sizeMsg}, metrics written to ${file}`);
     }
     catch (error) {
         // Fail-open: metrics issues must never break the cache flow.

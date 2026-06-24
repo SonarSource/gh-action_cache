@@ -417,7 +417,7 @@ jobs:
           for f in "${files[@]}"; do
             echo "--- $f ---"
             cat "$f"
-            jq -e '.step, .key, .backend, ."cache-hit", ."size-bytes-restored", ."timestamp-restored"' "$f" >/dev/null
+            jq -e '.step, .key, .backend, .cache_hit, .size_bytes_restored, .timestamp_restored' "$f" >/dev/null
           done
 
       - name: Populate cache path so the post-step measures a saved size

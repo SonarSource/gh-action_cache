@@ -1,0 +1,29 @@
+name: S3 Cache Save (conditional)
+description: Internal action - conditionally saves the S3 cache in a post step, skipping redundant default-branch duplicates
+inputs:
+  key:
+    description: Branch-scoped save key
+    required: true
+  path:
+    description: Files/directories to cache
+    required: true
+  matched-key:
+    description: cache-matched-key reported by the restore step
+    default: ''
+  fallback-exact-key:
+    description: Fallback exact key from prepare-keys.sh
+    default: ''
+  lookup-only:
+    description: Whether the cache ran in lookup-only mode
+    default: 'false'
+  skip-redundant-save:
+    description: Skip saving when restored content equals the default-branch cache
+    default: 'true'
+  enable-cross-os-archive:
+    description: Pass-through to the save
+    default: 'false'
+runs:
+  using: node24
+  main: dist/main/index.js
+  post: dist/post/index.js
+  post-if: success()

@@ -44,6 +44,12 @@ inputs:
       Import GitHub cache to S3 when no S3 cache exists (migration mode). Enabled by default when using S3 backend.
       Set to 'false' to disable, or control via the CACHE_IMPORT_GITHUB environment variable.
     default: ''
+  skip-redundant-save:
+    description: >
+      Skip saving the branch-scoped cache when the restored content is byte-identical to the default-branch
+      cache (S3 backend only). Avoids uploading a duplicate of the default-branch cache on feature branches
+      that did not change the cached content. Set to 'false' to always save.
+    default: 'true'
 
 outputs:
   cache-hit:
@@ -171,9 +177,11 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: $ACTION_PATH_CACHE/scripts/prepare-keys.sh
 
+    # Restore-only: the combined runs-on/cache action's automatic post-save is replaced by the explicit, conditional `cache-save` step
+    # below. Using the restore sub-action gives us `cache-matched-key` without an unconditional duplicate save (BUILD-11220).
     - name: Cache on S3
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      uses: runs-on/cache@88d90644011a3a9957fd141a106f5a94f9794203 # v5.0.7
+      uses: runs-on/cache/restore@88d90644011a3a9957fd141a106f5a94f9794203 # v5.0.7
       id: s3-cache
       env:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
@@ -190,7 +198,6 @@ runs:
         path: ${{ inputs.path }}
         key: ${{ steps.prepare-keys.outputs.branch-key }}
         restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
-        upload-chunk-size: ${{ inputs.upload-chunk-size }}
         enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
         # When import mode is active, suppress fail-on-cache-miss here: a subsequent step handles it after also attempting the GitHub cache
         # fallback.
@@ -312,6 +319,29 @@ runs:
         backend: ${{ steps.cache-backend.outputs.cache-backend }}
         lookup-only: ${{ inputs.lookup-only }}
         step-id: ${{ github.action }}
+
+    # Conditional S3 cache save (replaces runs-on/cache's automatic post-save). Its post step saves to S3 only when the restored content
+    # is not byte-identical to the default-branch cache — skipping the redundant branch-scoped duplicate (BUILD-11220). Placed before
+    # credential-guard so that, under LIFO post ordering, credential-guard's post re-exports AWS creds to GITHUB_ENV *before* this step's
+    # post performs the upload.
+    - name: Conditional S3 cache save
+      if: steps.cache-backend.outputs.cache-backend == 's3' && inputs.lookup-only != 'true'
+      id: cache-save
+      # TODO(BUILD-11220): revert to @v1 once this branch is merged and a v1 tag including cache-save exists.
+      # The cache-save sub-action is new in this PR, so it does not yet exist on the v1 tag.
+      uses: SonarSource/gh-action_cache/cache-save@feat/mmatuszny/BUILD-11220-skip-redundant-cache-save
+      env:
+        RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
+        AWS_DEFAULT_REGION: eu-central-1
+        AWS_REGION: eu-central-1
+      with:
+        key: ${{ steps.prepare-keys.outputs.branch-key }}
+        path: ${{ inputs.path }}
+        matched-key: ${{ steps.s3-cache.outputs.cache-matched-key }}
+        fallback-exact-key: ${{ steps.prepare-keys.outputs.fallback-exact-key }}
+        lookup-only: ${{ inputs.lookup-only }}
+        skip-redundant-save: ${{ inputs.skip-redundant-save }}
+        enable-cross-os-archive: ${{ inputs.enableCrossOsArchive }}
 
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'

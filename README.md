@@ -48,6 +48,7 @@ cache interface.
 | `enableCrossOsArchive`       | Enable cross-OS cache compatibility                                                                                                              | No       | `false`                                                                                                  |
 | `fail-on-cache-miss`         | Fail workflow if cache entry not found                                                                                                           | No       | `false`                                                                                                  |
 | `lookup-only`                | Only check cache existence without downloading                                                                                                   | No       | `false`                                                                                                  |
+| `skip-redundant-save`        | Skip saving the branch-scoped cache when restored content is byte-identical to the default-branch cache (S3 only). Set false to always save.     | No       | `true`                                                                                                   |
 | `backend`                    | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |                                                                                                          |
 | `import-github-cache`        | Import GitHub cache to S3 when no S3 cache exists (migration mode, S3 backend only). Takes priority over `CACHE_IMPORT_GITHUB` env var.          | No       | `true` when backend is explicitly forced to `s3` or for public repos; `false` for private/internal repos |
 
@@ -293,6 +294,24 @@ To disable the automatic default branch fallback:
   when no branch-specific entry exists
 - **Dynamic default branch detection**: The action detects your default branch using the GitHub API and uses it for fallback
 - **Branch isolation**: Each branch maintains its own cache namespace, preventing cross-branch cache pollution
+
+### Skipping redundant saves
+
+When a feature branch finds no branch-scoped cache and restores the default-branch fallback instead, and nothing in the cached path
+changes during the job, saving a branch-scoped copy would only upload a byte-identical duplicate of the default-branch cache. To avoid
+this, the S3 save path skips the branch-scoped save when the restored content matches the default-branch fallback. This is on by default
+(`skip-redundant-save: true`); set `skip-redundant-save: false` to always save the branch-scoped cache.
+
+The skip is **content-aware**, not just key-based: the action fingerprints the cached path right after restore and again before save
+(a digest over each file's relative path and size), and only skips when both the cache key matched the default-branch fallback **and**
+the content is unchanged. So if a build enriches the cached directory under a stable key (e.g. `~/.gradle` or `~/.m2` gaining transitive
+artifacts), the branch-scoped save still happens. When the fingerprint cannot be computed, the action errs toward saving.
+
+> **Limitations:**
+>
+> - The fingerprint uses each file's path and size, so a same-size in-place edit (same path, identical byte length) is not detected. This
+>   does not affect content-addressed caches (npm, pip, Gradle, Maven), where changed artifacts land at new paths.
+> - `upload-chunk-size` is currently not applied on the S3 save path — the conditional save step does not thread it through.
 
 ### Environment Configuration
 

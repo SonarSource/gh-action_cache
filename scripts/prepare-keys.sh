@@ -83,6 +83,11 @@ if [[ -n "$FALLBACK_EXACT_KEY" ]]; then
   RESTORE_KEYS="$FALLBACK_EXACT_KEY"
 fi
 
+# Expose the fallback exact key so the save step can detect redundant saves
+# (when the restored cache-matched-key equals this, content is identical to the
+# default-branch cache and the branch-scoped save would be a pure duplicate).
+echo "fallback-exact-key=${FALLBACK_EXACT_KEY}" >> "$GITHUB_OUTPUT"
+
 # Helper: append a prefixed restore key for each user-provided restore-key line
 append_restore_keys() {
   local prefix="$1"

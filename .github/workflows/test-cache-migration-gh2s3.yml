@@ -15,7 +15,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Save GitHub cache entry (for import scenario)
         run: mkdir -p ~/.cache/test-migration && echo "github-content" > ~/.cache/test-migration/test-file.txt
       - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -37,7 +37,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Create S3 cache content
         run: mkdir -p ~/.cache/test-migration && echo "s3-content" > ~/.cache/test-migration/test-file.txt
       - name: Save to S3 cache
@@ -58,7 +58,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Cache with migration fallback
         id: cache
         uses: ./
@@ -83,7 +83,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Cache without migration fallback
         id: cache
         uses: ./
@@ -109,7 +109,7 @@ jobs:
     env:
       CACHE_IMPORT_GITHUB: 'false'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Cache without migration fallback (via env)
         id: cache
         uses: ./
@@ -132,7 +132,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Cache (S3 hit expected, import enabled)
         id: cache
         uses: ./
@@ -158,7 +158,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Cache (auto-detected backend, no backend input or CACHE_BACKEND env)
         id: cache
         uses: ./

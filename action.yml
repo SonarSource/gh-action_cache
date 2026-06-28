@@ -154,7 +154,7 @@ runs:
     - name: Setup S3 cache credentials
       if: steps.cache-backend.outputs.cache-backend == 's3'
       id: aws-auth
-      uses: SonarSource/gh-action_cache/credential-setup@v1
+      uses: SonarSource/gh-action_cache/credential-setup@339d9d71cc5210bfa866a831dd8eba8e32c40491 # v1.7.1
       with:
         environment: ${{ inputs.environment }}
 
@@ -315,7 +315,7 @@ runs:
 
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      uses: SonarSource/gh-action_cache/credential-guard@v1
+      uses: SonarSource/gh-action_cache/credential-guard@339d9d71cc5210bfa866a831dd8eba8e32c40491 # v1.7.1
       with:
         credentials-file: ${{ steps.aws-auth.outputs.credentials-file }}
 
@@ -324,7 +324,7 @@ runs:
     # and cache-metrics-post.
     - name: Symlink keeper (preserve .actions/cache-metrics across nested checkouts)
       if: steps.cache-metrics-prep.outputs.prepared == 'true'
-      uses: SonarSource/gh-action_cache/symlink-keeper@symlink-keeper-1.0.0
+      uses: SonarSource/gh-action_cache/symlink-keeper@a7d13cdd1c9f097a5f8382ccec463be2831e3dbc # symlink-keeper-1.0.0
       with:
         cache-metrics-action-path: ${{ format('{0}/cache-metrics', github.action_path) }}
 

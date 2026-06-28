@@ -23,11 +23,11 @@ jobs:
       actions: write  # required to list GitHub cache entries and set the opt-out repository variable
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup S3 cache credentials
         id: aws-auth
-        uses: SonarSource/gh-action_cache/credential-setup@v1
+        uses: SonarSource/gh-action_cache/credential-setup@339d9d71cc5210bfa866a831dd8eba8e32c40491 # v1.7.1
         with:
           environment: ${{ inputs.environment }}
 

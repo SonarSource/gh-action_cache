@@ -16,7 +16,7 @@ jobs:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
     - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       with:
-        version: 2025.7.12
+        version: 2026.6.14
     - name: Cache Python dependencies
       id: cache-python
       uses: ./
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.6.14
       - name: Cache Python dependencies
         id: cache-python
         uses: ./
@@ -84,7 +84,7 @@ jobs:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
     - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       with:
-        version: 2025.7.12
+        version: 2026.6.14
     - name: Cache Go modules with fallback branch
       id: cache-go
       uses: ./
@@ -130,7 +130,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.6.14
 
       # Step 1: Use our cache action (should restore and later save)
       - name: Cache with S3
@@ -198,7 +198,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.6.14
 
       # First cache invocation
       - name: Cache pip dependencies
@@ -240,7 +240,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.6.14
 
       # Simulate pre-existing AWS config (as if configure-aws-credentials ran before)
       - name: Create pre-existing AWS config
@@ -309,7 +309,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.6.14
 
       - name: Cache with S3
         id: cache-test
@@ -347,7 +347,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.6.14
 
       - name: Cache with S3 (metrics enabled)
         id: cache-test
@@ -385,7 +385,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.6.14
 
       - name: Cache pip with S3 (metrics check)
         id: cache-metrics-test
@@ -438,7 +438,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.6.14
 
       - name: Verify runner pre-job hook activated CI metrics
         run: |
@@ -499,7 +499,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.6.14
 
       - name: Simulate runner pre-job decision file (will be overridden by workflow env)
         run: |

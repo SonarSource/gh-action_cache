@@ -50,6 +50,7 @@ export async function run(): Promise<void> {
     core.saveState('path', inputs.path);
     core.saveState('cacheHit', inputs.cacheHit ? 'true' : 'false');
     core.saveState('lookupOnly', inputs.lookupOnly ? 'true' : 'false');
+    core.saveState('mode', inputs.mode);
 
     const sizeMsg = sizeBytes === null ? 'n/a (non-Linux)' : `${sizeBytes} B`;
     core.info(`cache-metrics: restored size = ${sizeMsg}, metrics written to ${file}`);

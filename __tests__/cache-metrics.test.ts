@@ -232,6 +232,7 @@ describe('cache-metrics-main', () => {
     expect(core.saveState).toHaveBeenCalledWith('metricsFile', written);
     expect(core.saveState).toHaveBeenCalledWith('cacheHit', 'true');
     expect(core.saveState).toHaveBeenCalledWith('lookupOnly', 'false');
+    expect(core.saveState).toHaveBeenCalledWith('mode', '');
   });
 
   it.skipIf(process.platform !== 'linux').each([
@@ -368,14 +369,24 @@ describe('cache-metrics-post', () => {
     {
       reason: 'cache-hit was true (exact match: cache action skips save)',
       stepName: 'x', file: 'cache-x.json', backend: 'github',
-      cacheHit: true, cacheHitState: 'true', lookupOnlyState: 'false',
+      cacheHit: true, cacheHitState: 'true', lookupOnlyState: 'false', modeState: '',
     },
     {
       reason: 'lookup-only was true',
       stepName: 'y', file: 'cache-y.json', backend: 's3',
-      cacheHit: false, cacheHitState: 'false', lookupOnlyState: 'true',
+      cacheHit: false, cacheHitState: 'false', lookupOnlyState: 'true', modeState: '',
     },
-  ])('sets saved=false when $reason', async ({ stepName, file, backend, cacheHit, cacheHitState, lookupOnlyState }) => {
+    {
+      reason: 'mode was restore-only (fallback-exact-match skip, cache action never ran a save-capable step)',
+      stepName: 'z', file: 'cache-z.json', backend: 's3',
+      cacheHit: false, cacheHitState: 'false', lookupOnlyState: 'false', modeState: 'restore-only',
+    },
+    {
+      reason: 'mode was lookup (caller requested lookup-only mode via s3-decide)',
+      stepName: 'w', file: 'cache-w.json', backend: 's3',
+      cacheHit: false, cacheHitState: 'false', lookupOnlyState: 'false', modeState: 'lookup',
+    },
+  ])('sets saved=false when $reason', async ({ stepName, file, backend, cacheHit, cacheHitState, lookupOnlyState, modeState }) => {
     const metricsFile = path.join(tmp, file);
     writeMetricsFile(metricsFile, {
       step: stepName,
@@ -395,6 +406,7 @@ describe('cache-metrics-post', () => {
       path: '',
       cacheHit: cacheHitState,
       lookupOnly: lookupOnlyState,
+      mode: modeState,
     };
     vi.mocked(core.getState).mockImplementation((name) => state[name] ?? '');
 

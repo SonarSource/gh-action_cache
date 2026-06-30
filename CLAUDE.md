@@ -82,6 +82,12 @@ the matching job:
 - **GitHub-cache import fallback resolution** (`action.yml:135-162`): five-step priority chain ending
   in "private/internal repo → false". When active, it suppresses `fail-on-cache-miss` on the S3 step
   and enforces it later, after also trying the GitHub-cache restore.
+- **Skip redundant save on exact fallback match** (`s3-decide` step, `action.yml:195-221`): when the
+  restored key exactly matches the default-branch fallback (`refs/heads/${FALLBACK_BRANCH}/${key}`),
+  the step picks a save-incapable mode (`restore-only`/`lookup`) instead of `combined`, so the
+  branch never re-saves content identical to what the fallback already has. `cache-metrics` reads
+  this `mode` to report `saved: false` accordingly. Regression job:
+  `test-s3-cache-skip-redundant-save`.
 
 ## Pinned environment
 

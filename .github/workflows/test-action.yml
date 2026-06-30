@@ -425,6 +425,58 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
+  # when the S3 lookup resolves an exact match against the default-branch fallback key (content is byte-identical to master's cache), the
+  # S3 step runs in `restore-only` mode and never saves back under the branch key.
+  # Uses a stable key (no github.run_id): once master has saved it at least once, PR runs restoring via fallback observe an exact match.
+  test-s3-cache-skip-redundant-save:
+    runs-on: github-ubuntu-latest-s
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      CI_METRICS_ENABLED: 'true'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: 2025.7.12
+
+      - name: Cache pip with a stable key (exact fallback-match check)
+        id: cache-skip-save
+        uses: ./
+        with:
+          path: ~/.cache/pip
+          key: skip-save-verify-${{ runner.os }}
+          fail-on-cache-miss: false
+          environment: dev
+          backend: s3
+
+      - name: Verify redundant save is skipped on an exact fallback match
+        run: |
+          expected_fallback_key="refs/heads/master/skip-save-verify-${{ runner.os }}"
+          matched_key="${{ steps.cache-skip-save.outputs.cache-matched-key }}"
+
+          if [[ "${{ steps.cache-skip-save.outputs.cache-hit }}" == "true" || "$matched_key" != "$expected_fallback_key" ]]; then
+            echo "::notice::No exact fallback-branch match yet (matched-key='$matched_key', expected='$expected_fallback_key') — self-heals once master has saved this key. Skipping assertion."
+            exit 0
+          fi
+
+          shopt -s nullglob
+          files=(/tmp/ci-metrics/cache-*.json)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error::no cache-*.json under /tmp/ci-metrics/"
+            ls -la /tmp/ci-metrics/ || true
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "--- $f ---"
+            cat "$f"
+            jq -e '.saved == false' "$f" >/dev/null || {
+              echo "::error::expected saved=false on an exact fallback-branch match, got $(jq -c '.saved' "$f")"
+              exit 1
+            }
+          done
+
   # Runner-hook path: metrics on when the runner pre-job hook (job-started.sh) writes the decision
   # file /tmp/ci-metrics/enabled. No workflow-level CI_METRICS_ENABLED — the gate resolves purely
   # from the presence-only file written by the hook.
@@ -555,6 +607,7 @@ jobs:
       - test-s3-cache-survives-git-clean
       - test-s3-cache-survives-git-clean-with-metrics
       - test-cache-metrics-output
+      - test-s3-cache-skip-redundant-save
       - test-cache-metrics-runner-hook
       - test-cache-metrics-workflow-false
     runs-on: github-ubuntu-latest-s

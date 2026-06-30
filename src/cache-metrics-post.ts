@@ -17,11 +17,14 @@ export async function run(): Promise<void> {
     const pathInput = core.getState('path');
     const cacheHit = core.getState('cacheHit') === 'true';
     const lookupOnly = core.getState('lookupOnly') === 'true';
+    const mode = core.getState('mode');
 
     // Size measurement requires GNU `du -sb` (Linux only); null on other platforms.
     const sizeBytes = process.platform === 'linux' ? measureCacheBytes(pathInput) : null;
-    // The cache action skips save when it found an exact-match hit, or when in lookup-only mode.
-    const saved = !lookupOnly && !cacheHit;
+    // The cache action skips save when it found an exact-match hit, when in lookup-only mode, or when the
+    // S3 decision mode picked a save-incapable step (`restore-only`/`lookup`).
+    const saveIncapable = mode === 'restore-only' || mode === 'lookup';
+    const saved = !saveIncapable && !lookupOnly && !cacheHit;
 
     const prior = readMetricsFile(metricsFile);
     const record: CacheMetricsRecord = {

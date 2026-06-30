@@ -25,6 +25,10 @@ inputs:
   step-id:
     description: Unique discriminator for the per-invocation JSON filename (typically `github.action` of the caller)
     required: true
+  mode:
+    description: The S3 decision mode (`lookup`, `restore-only`, `combined`) selected by the caller's s3-decide step; empty for the github backend
+    required: false
+    default: ''
 outputs:
   cache-size-bytes:
     description: Total size in bytes of the cached path(s) at restore-time

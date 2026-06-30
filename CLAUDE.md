@@ -63,13 +63,14 @@ The design defends against real production failures — each has a regression-te
 `.github/workflows/test-action.yml`. When changing anything in the credential flow, add or update
 the matching job:
 
-| Failure mode                                                | Regression job                                   |
-| ----------------------------------------------------------- | ------------------------------------------------ |
-| User overwrites `AWS_*` in `GITHUB_ENV` mid-job             | `test-s3-cache-with-credential-interference`     |
-| Windows `~/.aws/config` parse error                         | `test-s3-cache-windows`                          |
-| Two cache steps in one job corrupting `~/.aws/config`       | `test-s3-cache-multiple-invocations`             |
-| Pre-existing `~/.aws/*` from `configure-aws-credentials`    | `test-s3-cache-with-preset-aws-config`           |
-| `git clean -ffdx` from `actions/checkout` wiping workspace  | `test-s3-cache-survives-git-clean`               |
+| Failure mode                                                     | Regression job                                                                                    |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| User overwrites `AWS_*` in `GITHUB_ENV` mid-job                  | `test-s3-cache-with-credential-interference`                                                      |
+| Windows `~/.aws/config` parse error                              | `test-s3-cache-windows`                                                                           |
+| Linux S3 save → Windows S3 restore (`enableCrossOsArchive`)      | `test-s3-cache-cross-os-save-linux` + `test-s3-cache-cross-os-restore-windows`                    |
+| Two cache steps in one job corrupting `~/.aws/config`            | `test-s3-cache-multiple-invocations`                                                              |
+| Pre-existing `~/.aws/*` from `configure-aws-credentials`         | `test-s3-cache-with-preset-aws-config`                                                            |
+| `git clean -ffdx` from `actions/checkout` wiping workspace       | `test-s3-cache-survives-git-clean`                                                                |
 
 ## Backend & cache-key logic — the non-obvious bits
 

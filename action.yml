@@ -173,7 +173,7 @@ runs:
 
     - name: Cache on S3
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      uses: runs-on/cache@88d90644011a3a9957fd141a106f5a94f9794203 # v5.0.7
+      uses: matemoln/cache@fix/cross-os-s3-restore
       id: s3-cache
       env:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket

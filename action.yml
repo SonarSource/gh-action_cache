@@ -171,8 +171,77 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: $ACTION_PATH_CACHE/scripts/prepare-keys.sh
 
-    - name: Cache on S3
+    - name: Probe S3 cache (lookup-only)
       if: steps.cache-backend.outputs.cache-backend == 's3'
+      uses: runs-on/cache/restore@88d90644011a3a9957fd141a106f5a94f9794203 # v5.0.7
+      id: s3-probe
+      env:
+        RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
+        AWS_DEFAULT_REGION: eu-central-1
+        AWS_REGION: eu-central-1
+        AWS_ACCESS_KEY_ID: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
+        AWS_PROFILE: ''
+        AWS_DEFAULT_PROFILE: ''
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ steps.prepare-keys.outputs.branch-key }}
+        restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
+        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
+        fail-on-cache-miss: false
+        lookup-only: true
+
+    - name: Decide S3 cache mode
+      if: steps.cache-backend.outputs.cache-backend == 's3'
+      id: s3-decide
+      shell: bash
+      env:
+        LOOKUP_ONLY: ${{ inputs.lookup-only }}
+        PROBE_HIT: ${{ steps.s3-probe.outputs.cache-hit }}
+        PROBE_MATCHED_KEY: ${{ steps.s3-probe.outputs.cache-matched-key }}
+        FALLBACK_EXACT_KEY: ${{ steps.prepare-keys.outputs.fallback-exact-key }}
+      run: |
+        echo "::group::Decide S3 cache mode"
+        if [[ "$LOOKUP_ONLY" == "true" ]]; then
+          MODE="lookup"
+          REASON="lookup-only input set — no restore, no save"
+        elif [[ "$PROBE_HIT" == "true" ]]; then
+          MODE="restore-only"
+          REASON="branch-scoped key already holds exact content — restore without redundant save"
+        elif [[ -n "$PROBE_MATCHED_KEY" && -n "$FALLBACK_EXACT_KEY" && "$PROBE_MATCHED_KEY" == "$FALLBACK_EXACT_KEY" ]]; then
+          MODE="restore-only"
+          REASON="content matched the default-branch fallback-exact key — identical to default branch, skip duplicate save (BUILD-11220)"
+        else
+          MODE="combined"
+          REASON="no usable S3 match (or a non-fallback partial match) — restore and save back under the branch-scoped key"
+        fi
+        echo "mode=$MODE (matched-key='$PROBE_MATCHED_KEY', fallback-exact-key='$FALLBACK_EXACT_KEY'): $REASON"
+        echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"
+
+    - name: Restore from S3 (no save)
+      if: steps.cache-backend.outputs.cache-backend == 's3' && steps.s3-decide.outputs.mode == 'restore-only'
+      uses: runs-on/cache/restore@88d90644011a3a9957fd141a106f5a94f9794203 # v5.0.7
+      id: s3-restore
+      env:
+        RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
+        AWS_DEFAULT_REGION: eu-central-1
+        AWS_REGION: eu-central-1
+        AWS_ACCESS_KEY_ID: ${{ steps.aws-auth.outputs.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.aws-auth.outputs.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ steps.aws-auth.outputs.AWS_SESSION_TOKEN }}
+        AWS_PROFILE: ''
+        AWS_DEFAULT_PROFILE: ''
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ steps.prepare-keys.outputs.branch-key }}
+        restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
+        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
+        fail-on-cache-miss: ${{ steps.cache-backend.outputs.import-github == 'true' && 'false' || inputs.fail-on-cache-miss }}
+
+    - name: Cache on S3
+      if: steps.cache-backend.outputs.cache-backend == 's3' && steps.s3-decide.outputs.mode == 'combined'
       uses: runs-on/cache@88d90644011a3a9957fd141a106f5a94f9794203 # v5.0.7
       id: s3-cache
       env:
@@ -200,6 +269,7 @@ runs:
     - name: Import GitHub cache to S3 (migration fallback)
       if: >-
         steps.cache-backend.outputs.cache-backend == 's3' &&
+        steps.s3-decide.outputs.mode == 'combined' &&
         steps.s3-cache.outputs.cache-hit != 'true' &&
         steps.cache-backend.outputs.import-github == 'true'
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -214,6 +284,7 @@ runs:
     - name: Enforce fail-on-cache-miss after GitHub import fallback
       if: >-
         steps.cache-backend.outputs.cache-backend == 's3' &&
+        steps.s3-decide.outputs.mode == 'combined' &&
         steps.cache-backend.outputs.import-github == 'true' &&
         inputs.fail-on-cache-miss == 'true' &&
         steps.s3-cache.outputs.cache-hit != 'true' &&
@@ -234,13 +305,17 @@ runs:
       env:
         HIT_GITHUB: ${{ steps.github-cache.outputs.cache-hit }}
         HIT_S3: ${{ steps.s3-cache.outputs.cache-hit }}
+        HIT_S3_RESTORE: ${{ steps.s3-restore.outputs.cache-hit }}
+        HIT_S3_PROBE: ${{ steps.s3-probe.outputs.cache-hit }}
         HIT_IMPORT: ${{ steps.github-import.outputs.cache-hit }}
         MATCHED_GITHUB: ${{ steps.github-cache.outputs.cache-matched-key }}
         MATCHED_S3: ${{ steps.s3-cache.outputs.cache-matched-key }}
+        MATCHED_S3_RESTORE: ${{ steps.s3-restore.outputs.cache-matched-key }}
+        MATCHED_S3_PROBE: ${{ steps.s3-probe.outputs.cache-matched-key }}
         MATCHED_IMPORT: ${{ steps.github-import.outputs.cache-matched-key }}
       run: |
-        CACHE_HIT="${HIT_GITHUB:-${HIT_S3:-${HIT_IMPORT:-}}}"
-        MATCHED_KEY="${MATCHED_GITHUB:-${MATCHED_S3:-${MATCHED_IMPORT:-}}}"
+        CACHE_HIT="${HIT_GITHUB:-${HIT_S3:-${HIT_S3_RESTORE:-${HIT_S3_PROBE:-${HIT_IMPORT:-}}}}}"
+        MATCHED_KEY="${MATCHED_GITHUB:-${MATCHED_S3:-${MATCHED_S3_RESTORE:-${MATCHED_S3_PROBE:-${MATCHED_IMPORT:-}}}}}"
         echo "cache-hit=${CACHE_HIT}" >> "$GITHUB_OUTPUT"
         echo "matched-key=${MATCHED_KEY}" >> "$GITHUB_OUTPUT"
 

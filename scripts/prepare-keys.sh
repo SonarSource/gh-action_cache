@@ -83,6 +83,11 @@ if [[ -n "$FALLBACK_EXACT_KEY" ]]; then
   RESTORE_KEYS="$FALLBACK_EXACT_KEY"
 fi
 
+# Emit the fallback exact-match key on its own (empty when there is no fallback). The S3 path uses it to detect when content was
+# restored from the default-branch fallback and is therefore byte-identical to it, so the redundant branch-scoped save can be skipped
+# (BUILD-11220).
+echo "fallback-exact-key=${FALLBACK_EXACT_KEY}" >> "$GITHUB_OUTPUT"
+
 # Helper: append a prefixed restore key for each user-provided restore-key line
 append_restore_keys() {
   local prefix="$1"

@@ -144,7 +144,10 @@ jobs:
           # import-github-cache defaults to true — S3 hit should prevent GitHub from being tried
       - name: Verify S3 content restored, not GitHub
         run: |
-          [[ "${{ steps.cache.outputs.cache-hit }}" == "true" ]] || { echo "ERROR: expected S3 hit"; exit 1; }
+          # BUILD-11220: with the duplicate save removed, content identical to the default branch is served from the master
+          # fallback key (cache-hit=false, a fallback restore), not an exact branch-key primary hit. Assert an S3 match plus the
+          # correct content (which proves GitHub import did NOT override S3) rather than an exact primary hit.
+          [[ -n "${{ steps.cache.outputs.cache-matched-key }}" ]] || { echo "ERROR: expected an S3 cache match"; exit 1; }
           [[ "$(cat ~/.cache/test-migration/test-file.txt)" == "s3-content" ]] || { echo "ERROR: unexpected content — GitHub import may have overridden S3"; exit 1; }
 
   # Scenario 5: auto-detected S3 (public repo) — GitHub import MUST be triggered via was-github-default=true

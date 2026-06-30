@@ -31104,6 +31104,7 @@ async function run() {
         core.saveState('path', inputs.path);
         core.saveState('cacheHit', inputs.cacheHit ? 'true' : 'false');
         core.saveState('lookupOnly', inputs.lookupOnly ? 'true' : 'false');
+        core.saveState('mode', inputs.mode);
         const sizeMsg = sizeBytes === null ? 'n/a (non-Linux)' : `${sizeBytes} B`;
         core.info(`cache-metrics: restored size = ${sizeMsg}, metrics written to ${file}`);
     }
@@ -31265,6 +31266,7 @@ function readInputs() {
         // via the CI_METRICS_DIR env var. Default keeps the action usable on any
         // runner without that env preset.
         metricsDir: process.env.CI_METRICS_DIR || exports.DEFAULT_METRICS_DIR,
+        mode: core.getInput('mode'),
     };
 }
 

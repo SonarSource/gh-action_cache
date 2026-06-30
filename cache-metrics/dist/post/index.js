@@ -31077,10 +31077,13 @@ async function run() {
         const pathInput = core.getState('path');
         const cacheHit = core.getState('cacheHit') === 'true';
         const lookupOnly = core.getState('lookupOnly') === 'true';
+        const mode = core.getState('mode');
         // Size measurement requires GNU `du -sb` (Linux only); null on other platforms.
         const sizeBytes = process.platform === 'linux' ? (0, cache_metrics_1.measureCacheBytes)(pathInput) : null;
-        // The cache action skips save when it found an exact-match hit, or when in lookup-only mode.
-        const saved = !lookupOnly && !cacheHit;
+        // The cache action skips save when it found an exact-match hit, when in lookup-only mode, or when the
+        // S3 decision mode picked a save-incapable step (`restore-only`/`lookup`).
+        const saveIncapable = mode === 'restore-only' || mode === 'lookup';
+        const saved = !saveIncapable && !lookupOnly && !cacheHit;
         const prior = (0, cache_metrics_1.readMetricsFile)(metricsFile);
         const record = {
             step: prior.step ?? 'cache',
@@ -31256,6 +31259,7 @@ function readInputs() {
         // via the CI_METRICS_DIR env var. Default keeps the action usable on any
         // runner without that env preset.
         metricsDir: process.env.CI_METRICS_DIR || exports.DEFAULT_METRICS_DIR,
+        mode: core.getInput('mode'),
     };
 }
 

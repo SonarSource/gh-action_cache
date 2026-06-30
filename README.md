@@ -293,6 +293,11 @@ To disable the automatic default branch fallback:
   when no branch-specific entry exists
 - **Dynamic default branch detection**: The action detects your default branch using the GitHub API and uses it for fallback
 - **Branch isolation**: Each branch maintains its own cache namespace, preventing cross-branch cache pollution
+- **No redundant save of default-branch content**: When a feature branch finds no branch-scoped entry and restores byte-identical content
+  from the default-branch fallback (same `key`), the action skips re-saving that content under the branch-scoped key — it would just be a
+  duplicate of the default-branch cache. Jobs that actually produce new content (their `key` does not match the default-branch cache)
+  still save normally. A consequence is that such a feature-branch job does not create its own branch-scoped copy and will re-restore
+  from the default-branch fallback on its next run.
 
 ### Environment Configuration
 

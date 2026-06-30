@@ -12,6 +12,7 @@ export interface CacheMetricsInputs {
   lookupOnly: boolean;
   stepId: string;
   metricsDir: string;
+  mode: string;
 }
 
 export interface CacheMetricsRecord {
@@ -33,8 +34,8 @@ export interface CacheMetricsRecord {
    */
   size_bytes_at_end: number | null;
   /**
-   * Whether the cache action actually persists the cache at job end. False when `cache_hit` was true (exact match: cache action skips save)
-   * or when lookup-only` was set.
+   * Whether the cache action actually persists the cache at job end. False when `cache_hit` was true (exact match: cache action skips save),
+   * when `lookup-only` was set, or when the S3 decision mode was `restore-only`/`lookup` (a save-incapable step ran).
    */
   saved: boolean | null;
   timestamp_restored: string | null;
@@ -141,5 +142,6 @@ export function readInputs(): CacheMetricsInputs {
     // via the CI_METRICS_DIR env var. Default keeps the action usable on any
     // runner without that env preset.
     metricsDir: process.env.CI_METRICS_DIR || DEFAULT_METRICS_DIR,
+    mode: core.getInput('mode'),
   };
 }

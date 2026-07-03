@@ -269,7 +269,8 @@ runs:
     - name: Import GitHub cache to S3 (migration fallback)
       if: >-
         steps.cache-backend.outputs.cache-backend == 's3' &&
-        steps.s3-decide.outputs.mode == 'combined' &&
+        (steps.s3-decide.outputs.mode == 'combined' || steps.s3-decide.outputs.mode == 'lookup') &&
+        steps.s3-probe.outputs.cache-hit != 'true' &&
         steps.s3-cache.outputs.cache-hit != 'true' &&
         steps.cache-backend.outputs.import-github == 'true'
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -284,9 +285,10 @@ runs:
     - name: Enforce fail-on-cache-miss after GitHub import fallback
       if: >-
         steps.cache-backend.outputs.cache-backend == 's3' &&
-        steps.s3-decide.outputs.mode == 'combined' &&
+        (steps.s3-decide.outputs.mode == 'combined' || steps.s3-decide.outputs.mode == 'lookup') &&
         steps.cache-backend.outputs.import-github == 'true' &&
         inputs.fail-on-cache-miss == 'true' &&
+        steps.s3-probe.outputs.cache-hit != 'true' &&
         steps.s3-cache.outputs.cache-hit != 'true' &&
         steps.github-import.outputs.cache-matched-key == ''
       shell: bash

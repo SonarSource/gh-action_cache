@@ -4,3 +4,4 @@ self-hosted-runner:
     - sonar-xs
     - github-ubuntu-latest-s
     - github-windows-latest-s
+    - warp-custom-ubuntu-24-04

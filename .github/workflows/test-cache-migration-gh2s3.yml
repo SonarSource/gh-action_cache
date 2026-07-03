@@ -10,7 +10,7 @@ on:
 jobs:
   # Prerequisite: provision GitHub cache entries used by the test scenarios
   provision-github-cache:
-    runs-on: github-ubuntu-latest-s
+    runs-on: sonar-xs
     name: "Provision GitHub cache entries"
     permissions:
       contents: read
@@ -31,7 +31,7 @@ jobs:
 
   # Prerequisite: provision an S3 cache entry for the S3-hit scenario
   provision-s3-cache:
-    runs-on: github-ubuntu-latest-s
+    runs-on: sonar-xs
     name: "Provision S3 cache entry"
     permissions:
       id-token: write
@@ -52,7 +52,7 @@ jobs:
   # Scenario 1: S3 backend with import mode active (default behavior after migration begins)
   test-s3-import-enabled:
     needs: provision-github-cache
-    runs-on: github-ubuntu-latest-s
+    runs-on: sonar-xs
     name: "S3 + import enabled (migration fallback)"
     permissions:
       id-token: write
@@ -77,7 +77,7 @@ jobs:
   # Scenario 2: S3 backend with import mode explicitly disabled
   test-s3-import-disabled:
     needs: provision-github-cache
-    runs-on: github-ubuntu-latest-s
+    runs-on: sonar-xs
     name: "S3 + import disabled (migration complete)"
     permissions:
       id-token: write
@@ -101,7 +101,7 @@ jobs:
   # Scenario 3: S3 backend with import disabled via env var (repo variable pattern)
   test-s3-import-disabled-via-env:
     needs: provision-github-cache
-    runs-on: github-ubuntu-latest-s
+    runs-on: sonar-xs
     name: "S3 + import disabled via env var"
     permissions:
       id-token: write
@@ -126,7 +126,7 @@ jobs:
   # Scenario 4: S3 hit — GitHub import step must be skipped entirely
   test-s3-hit-skips-github-import:
     needs: [ provision-github-cache, provision-s3-cache ]
-    runs-on: github-ubuntu-latest-s
+    runs-on: sonar-xs
     name: "S3 hit → no GitHub import"
     permissions:
       id-token: write
@@ -154,7 +154,7 @@ jobs:
   # without needing to force the backend explicitly (distinct from the BACKEND_SOURCE=forced path in scenario 1).
   test-auto-public-import-enabled:
     needs: provision-github-cache
-    runs-on: github-ubuntu-latest-s
+    runs-on: sonar-xs
     name: "Auto-detected S3 (public repo) → GitHub import enabled"
     permissions:
       id-token: write
@@ -186,8 +186,14 @@ jobs:
       - test-s3-import-disabled-via-env
       - test-s3-hit-skips-github-import
       - test-auto-public-import-enabled
-    runs-on: github-ubuntu-latest-s
+    runs-on: sonar-xs
     steps:
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: 2025.7.12
+          mise_toml: |
+            [tools]
+            python = "3.13.5"
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # v1.2.2
         with:

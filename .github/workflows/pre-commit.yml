@@ -7,6 +7,8 @@ jobs:
   pre-commit:
     name: "pre-commit"
     runs-on: sonar-xs
+    env:
+      VIRTUALENV_NO_PERIODIC_UPDATE: '1'
     permissions:
       id-token: write
       contents: read

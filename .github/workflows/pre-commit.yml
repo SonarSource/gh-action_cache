@@ -20,7 +20,7 @@ jobs:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.11
       - uses: SonarSource/gh-action_pre-commit@2ddc0c7fdabce0adfaaa4075a17690972ed9961a # 1.2.0
         with:
           extra-args: >

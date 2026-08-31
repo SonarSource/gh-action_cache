@@ -13,13 +13,13 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-    - uses: SonarSource/ci-github-actions/config-pip@v1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
       with:
         disable-caching: true
     - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       with:
-        version: 2025.7.12
+        version: 2026.8.14
     - name: Cache Python dependencies
       id: cache-python
       uses: ./
@@ -49,13 +49,13 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
       - name: Cache Python dependencies
         id: cache-python
         uses: ./
@@ -87,10 +87,10 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       with:
-        version: 2025.7.12
+        version: 2026.8.14
     - name: Cache Go modules with fallback branch
       id: cache-go
       uses: ./
@@ -133,13 +133,13 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
 
       # Step 1: Use our cache action (should restore and later save)
       - name: Cache with S3
@@ -180,8 +180,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - name: Point Windows pip at Repox config
@@ -214,13 +214,13 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
 
       # First cache invocation
       - name: Cache pip dependencies
@@ -259,13 +259,13 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
 
       # Simulate pre-existing AWS config (as if configure-aws-credentials ran before)
       - name: Create pre-existing AWS config
@@ -331,13 +331,13 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
 
       - name: Cache with S3
         id: cache-test
@@ -372,13 +372,13 @@ jobs:
     env:
       CI_METRICS_ENABLED: 'true'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
 
       - name: Cache with S3 (metrics enabled)
         id: cache-test
@@ -394,7 +394,7 @@ jobs:
       # This is the sequence that wiped `.actions/cache-metrics` from the workspace between main and post
       # in the pre-commit job — recovery is handled by the `symlink-keeper` post step.
       - name: Re-run actions/checkout (simulates nested action's checkout)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Create something to cache
         run: |
@@ -413,13 +413,13 @@ jobs:
       # Opt-in to the metrics emission
       CI_METRICS_ENABLED: 'true'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
 
       - name: Cache pip with S3 (metrics check)
         id: cache-metrics-test
@@ -470,10 +470,10 @@ jobs:
     env:
       CI_METRICS_ENABLED: 'true'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
 
       - name: Cache pip with a stable key (exact fallback-match check)
         id: cache-skip-save
@@ -521,13 +521,13 @@ jobs:
       contents: read
     # No CI_METRICS_ENABLED env set here — the runner pre-job hook writes the decision file.
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
 
       - name: Verify runner pre-job hook activated CI metrics
         run: |
@@ -585,13 +585,13 @@ jobs:
     env:
       CI_METRICS_ENABLED: 'false'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: SonarSource/ci-github-actions/config-pip@d41706a4180f70b6c0d0479795309a6c99726022 # 2.0.0
         with:
           disable-caching: true
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
 
       - name: Simulate runner pre-job decision file (will be overridden by workflow env)
         run: |
@@ -654,7 +654,7 @@ jobs:
     steps:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
           mise_toml: |
             [tools]
             python = "3.13.5"

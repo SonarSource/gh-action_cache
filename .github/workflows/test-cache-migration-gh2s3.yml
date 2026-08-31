@@ -15,16 +15,16 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Save GitHub cache entry (for import scenario)
         run: mkdir -p ~/.cache/test-migration && echo "github-content" > ~/.cache/test-migration/test-file.txt
-      - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/test-migration
           key: test-migration-gh
       - name: Save GitHub cache entry (for S3-hit scenario, to confirm it is NOT restored)
         run: echo "github-content" > ~/.cache/test-migration/test-file.txt
-      - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/test-migration
           key: test-migration-s3hit
@@ -37,7 +37,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Create S3 cache content
         run: mkdir -p ~/.cache/test-migration && echo "s3-content" > ~/.cache/test-migration/test-file.txt
       - name: Save to S3 cache
@@ -58,7 +58,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache with migration fallback
         id: cache
         uses: ./
@@ -83,7 +83,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache without migration fallback
         id: cache
         uses: ./
@@ -109,7 +109,7 @@ jobs:
     env:
       CACHE_IMPORT_GITHUB: 'false'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache without migration fallback (via env)
         id: cache
         uses: ./
@@ -132,7 +132,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache (S3 hit expected, import enabled)
         id: cache
         uses: ./
@@ -160,7 +160,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache (auto-detected backend, no backend input or CACHE_BACKEND env)
         id: cache
         uses: ./
@@ -190,7 +190,7 @@ jobs:
     steps:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.8.14
           mise_toml: |
             [tools]
             python = "3.13.5"

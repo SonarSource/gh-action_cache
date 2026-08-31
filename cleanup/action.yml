@@ -35,7 +35,7 @@ runs:
 
     - name: Setup S3 cache credentials
       id: aws-auth
-      uses: SonarSource/gh-action_cache/credential-setup@v1
+      uses: SonarSource/gh-action_cache/credential-setup@4e40632e780e11a8bbe9b721985ab22b42847cc4 # v1.7.2
       with:
         environment: ${{ inputs.environment }}
 

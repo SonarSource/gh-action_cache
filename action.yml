@@ -140,7 +140,7 @@ runs:
 
     - name: Cache with GitHub Actions (public repos)
       if: steps.cache-backend.outputs.cache-backend == 'github'
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       id: github-cache
       with:
         path: ${{ inputs.path }}
@@ -154,7 +154,7 @@ runs:
     - name: Setup S3 cache credentials
       if: steps.cache-backend.outputs.cache-backend == 's3'
       id: aws-auth
-      uses: SonarSource/gh-action_cache/credential-setup@v1
+      uses: SonarSource/gh-action_cache/credential-setup@4e40632e780e11a8bbe9b721985ab22b42847cc4 # v1.7.2
       with:
         environment: ${{ inputs.environment }}
 
@@ -273,7 +273,7 @@ runs:
         steps.s3-probe.outputs.cache-hit != 'true' &&
         steps.s3-cache.outputs.cache-hit != 'true' &&
         steps.cache-backend.outputs.import-github == 'true'
-      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       id: github-import
       with:
         path: ${{ inputs.path }}
@@ -393,7 +393,7 @@ runs:
 
     - name: Credential guard for S3 cache save
       if: steps.cache-backend.outputs.cache-backend == 's3'
-      uses: SonarSource/gh-action_cache/credential-guard@v1
+      uses: SonarSource/gh-action_cache/credential-guard@4e40632e780e11a8bbe9b721985ab22b42847cc4 # v1.7.2
       with:
         credentials-file: ${{ steps.aws-auth.outputs.credentials-file }}
 
@@ -402,7 +402,7 @@ runs:
     # and cache-metrics-post.
     - name: Symlink keeper (preserve .actions/cache-metrics across nested checkouts)
       if: steps.cache-metrics-prep.outputs.prepared == 'true'
-      uses: SonarSource/gh-action_cache/symlink-keeper@symlink-keeper-1.0.0
+      uses: SonarSource/gh-action_cache/symlink-keeper@a7d13cdd1c9f097a5f8382ccec463be2831e3dbc # symlink-keeper-1.0.0
       with:
         cache-metrics-action-path: ${{ format('{0}/cache-metrics', github.action_path) }}
 

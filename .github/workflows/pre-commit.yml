@@ -13,15 +13,15 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-npm@9d3488f52305895f599feb1ec8560c1a5339aa99 # v1
-      - uses: SonarSource/ci-github-actions/config-pip@v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: SonarSource/ci-github-actions/config-npm@983645f538ff01044b1e567adb23e6f527d8b52a # 1.8.9
+      - uses: SonarSource/ci-github-actions/config-pip@983645f538ff01044b1e567adb23e6f527d8b52a # 1.8.9
         with:
           disable-caching: true
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          version: 2025.7.12
-      - uses: SonarSource/gh-action_pre-commit@2ddc0c7fdabce0adfaaa4075a17690972ed9961a # 1.2.0
+          version: 2025.12.13
+      - uses: SonarSource/gh-action_pre-commit@ea734ef4ee748f680f3b4ac268c1ba90e245effc # 1.2.1
         with:
           extra-args: >
             --from-ref=origin/${{ github.event.pull_request.base.ref }}

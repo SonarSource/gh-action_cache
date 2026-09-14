@@ -134,8 +134,8 @@ describe('getCognitoCredentials', () => {
     });
 
     expect(result.accessKeyId).toBe('AKIA2');
-    // 1 fail + 1 GetId success + 1 GetCreds success
-    expect(sendMock).toHaveBeenCalledTimes(DEFAULT_MAX_ATTEMPTS);
+    // 1 GetId fail + 1 GetId success + 1 GetCreds success
+    expect(sendMock).toHaveBeenCalledTimes(3);
   });
 
   it('retries on transient Cognito GetCredentials failure', async () => {
@@ -162,7 +162,7 @@ describe('getCognitoCredentials', () => {
 
     expect(result.accessKeyId).toBe('AKIA3');
     // 1 GetId + 1 GetCreds fail + 1 GetCreds success
-    expect(sendMock).toHaveBeenCalledTimes(DEFAULT_MAX_ATTEMPTS);
+    expect(sendMock).toHaveBeenCalledTimes(3);
   });
 
   it('throws after all OIDC retries exhausted', async () => {

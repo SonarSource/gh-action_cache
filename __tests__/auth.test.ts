@@ -105,7 +105,8 @@ describe('getCognitoCredentials', () => {
     });
 
     expect(result.accessKeyId).toBe('AKIARETRY');
-    expect(core.getIDToken).toHaveBeenCalledTimes(2);
+    // 1 OIDC fail + 1 OIDC success + 1 GetId + 1 GetCreds
+    expect(core.getIDToken).toHaveBeenCalledTimes(4);
     expect(core.warning).toHaveBeenCalledWith(
       expect.stringContaining(`GitHub OIDC token failed (attempt 1/${DEFAULT_MAX_ATTEMPTS})`)
     );
@@ -134,8 +135,8 @@ describe('getCognitoCredentials', () => {
     });
 
     expect(result.accessKeyId).toBe('AKIA2');
-    // 1 fail + 1 GetId success + 1 GetCreds success
-    expect(sendMock).toHaveBeenCalledTimes(DEFAULT_MAX_ATTEMPTS);
+    // 1 GetId fail + 1 GetId success + 1 GetCreds success
+    expect(sendMock).toHaveBeenCalledTimes(3);
   });
 
   it('retries on transient Cognito GetCredentials failure', async () => {
@@ -162,7 +163,7 @@ describe('getCognitoCredentials', () => {
 
     expect(result.accessKeyId).toBe('AKIA3');
     // 1 GetId + 1 GetCreds fail + 1 GetCreds success
-    expect(sendMock).toHaveBeenCalledTimes(DEFAULT_MAX_ATTEMPTS);
+    expect(sendMock).toHaveBeenCalledTimes(3);
   });
 
   it('throws after all OIDC retries exhausted', async () => {

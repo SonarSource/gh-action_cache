@@ -80,4 +80,17 @@ describe('retryWithBackoff', () => {
     expect(result).toBe('ok');
     expect(fn).toHaveBeenCalledTimes(customMaxAttempts);
   });
+
+  it('throws immediately when shouldRetry returns false', async () => {
+    const fn = vi.fn().mockRejectedValue(new Error('ValidationException'));
+    const result = await retryWithBackoff(fn, {
+      label: 'test-op',
+      shouldRetry: () => false,
+    }).catch((e: Error) => e);
+
+    expect(result).toBeInstanceOf(Error);
+    expect((result as Error).message).toBe('ValidationException');
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(core.warning).not.toHaveBeenCalled();
+  });
 });

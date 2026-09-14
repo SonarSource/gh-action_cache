@@ -28,6 +28,13 @@ async function fetchAndMaskOidcToken(): Promise<string> {
   return token;
 }
 
+async function sendWithFreshOidcLogins<T>(
+  send: (logins: Record<string, string>) => Promise<T>
+): Promise<T> {
+  const token = await fetchAndMaskOidcToken();
+  return send({ [IDENTITY_PROVIDER]: token });
+}
+
 export interface AuthConfig {
   poolId: string;
   accountId: string;
@@ -55,14 +62,11 @@ export async function getCognitoCredentials(config: AuthConfig): Promise<AwsCred
 
   core.info('Exchanging OIDC token for Cognito identity...');
   const { IdentityId } = await retryWithBackoff(
-    async () => {
-      const token = await fetchAndMaskOidcToken();
-      return client.send(new GetIdCommand({
-        IdentityPoolId: config.poolId,
-        AccountId: config.accountId,
-        Logins: { [IDENTITY_PROVIDER]: token },
-      }));
-    },
+    () => sendWithFreshOidcLogins((logins) => client.send(new GetIdCommand({
+      IdentityPoolId: config.poolId,
+      AccountId: config.accountId,
+      Logins: logins,
+    }))),
     { label: 'Cognito GetId', ...retryOpts }
   );
 
@@ -72,13 +76,10 @@ export async function getCognitoCredentials(config: AuthConfig): Promise<AwsCred
 
   core.info('Obtaining AWS credentials from Cognito...');
   const { Credentials } = await retryWithBackoff(
-    async () => {
-      const token = await fetchAndMaskOidcToken();
-      return client.send(new GetCredentialsForIdentityCommand({
-        IdentityId,
-        Logins: { [IDENTITY_PROVIDER]: token },
-      }));
-    },
+    () => sendWithFreshOidcLogins((logins) => client.send(new GetCredentialsForIdentityCommand({
+      IdentityId,
+      Logins: logins,
+    }))),
     { label: 'Cognito GetCredentials', ...retryOpts }
   );
 

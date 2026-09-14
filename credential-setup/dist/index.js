@@ -49656,31 +49656,29 @@ async function fetchAndMaskOidcToken() {
     core.setSecret(token);
     return token;
 }
+async function sendWithFreshOidcLogins(send) {
+    const token = await fetchAndMaskOidcToken();
+    return send({ [IDENTITY_PROVIDER]: token });
+}
 async function getCognitoCredentials(config) {
     const retryOpts = { shouldRetry: isRetryableAuthError, ...config.retryOptions };
     core.info('Requesting GitHub OIDC token...');
     await (0, retry_1.retryWithBackoff)(() => fetchAndMaskOidcToken(), { label: 'GitHub OIDC token', ...retryOpts });
     const client = new client_cognito_identity_1.CognitoIdentityClient({ region: config.region });
     core.info('Exchanging OIDC token for Cognito identity...');
-    const { IdentityId } = await (0, retry_1.retryWithBackoff)(async () => {
-        const token = await fetchAndMaskOidcToken();
-        return client.send(new client_cognito_identity_1.GetIdCommand({
-            IdentityPoolId: config.poolId,
-            AccountId: config.accountId,
-            Logins: { [IDENTITY_PROVIDER]: token },
-        }));
-    }, { label: 'Cognito GetId', ...retryOpts });
+    const { IdentityId } = await (0, retry_1.retryWithBackoff)(() => sendWithFreshOidcLogins((logins) => client.send(new client_cognito_identity_1.GetIdCommand({
+        IdentityPoolId: config.poolId,
+        AccountId: config.accountId,
+        Logins: logins,
+    }))), { label: 'Cognito GetId', ...retryOpts });
     if (!IdentityId) {
         throw new Error('Failed to obtain Identity ID from Cognito Identity Pool');
     }
     core.info('Obtaining AWS credentials from Cognito...');
-    const { Credentials } = await (0, retry_1.retryWithBackoff)(async () => {
-        const token = await fetchAndMaskOidcToken();
-        return client.send(new client_cognito_identity_1.GetCredentialsForIdentityCommand({
-            IdentityId,
-            Logins: { [IDENTITY_PROVIDER]: token },
-        }));
-    }, { label: 'Cognito GetCredentials', ...retryOpts });
+    const { Credentials } = await (0, retry_1.retryWithBackoff)(() => sendWithFreshOidcLogins((logins) => client.send(new client_cognito_identity_1.GetCredentialsForIdentityCommand({
+        IdentityId,
+        Logins: logins,
+    }))), { label: 'Cognito GetCredentials', ...retryOpts });
     if (!Credentials?.AccessKeyId || !Credentials?.SecretKey || !Credentials?.SessionToken) {
         throw new Error('Failed to obtain AWS credentials from Cognito');
     }

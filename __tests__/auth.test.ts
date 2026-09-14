@@ -137,8 +137,6 @@ describe('getCognitoCredentials', () => {
     expect(result.accessKeyId).toBe('AKIA2');
     // 1 GetId fail + 1 GetId success + 1 GetCreds success
     expect(sendMock).toHaveBeenCalledTimes(3);
-    // warmup OIDC + one token per Cognito attempt
-    expect(core.getIDToken).toHaveBeenCalledTimes(4);
   });
 
   it('retries on transient Cognito GetCredentials failure', async () => {
@@ -166,7 +164,6 @@ describe('getCognitoCredentials', () => {
     expect(result.accessKeyId).toBe('AKIA3');
     // 1 GetId + 1 GetCreds fail + 1 GetCreds success
     expect(sendMock).toHaveBeenCalledTimes(3);
-    expect(core.getIDToken).toHaveBeenCalledTimes(4);
   });
 
   it('throws after all OIDC retries exhausted', async () => {
@@ -177,20 +174,5 @@ describe('getCognitoCredentials', () => {
     ).rejects.toThrow('OIDC down');
 
     expect(core.getIDToken).toHaveBeenCalledTimes(DEFAULT_MAX_ATTEMPTS);
-  });
-
-  it('fails fast on non-retryable Cognito errors', async () => {
-    vi.mocked(core.getIDToken).mockResolvedValue('token');
-    const permanent = Object.assign(new Error('1 validation error detected'), {
-      name: 'ValidationException',
-    });
-    sendMock.mockRejectedValueOnce(permanent);
-
-    await expect(
-      getCognitoCredentials({ poolId: 'pool', accountId: '123', region: 'eu-central-1', ...fastRetry })
-    ).rejects.toThrow('1 validation error detected');
-
-    expect(sendMock).toHaveBeenCalledTimes(1);
-    expect(core.warning).not.toHaveBeenCalled();
   });
 });

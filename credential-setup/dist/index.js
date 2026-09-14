@@ -49640,27 +49640,47 @@ const client_cognito_identity_1 = __nccwpck_require__(6473);
 const retry_1 = __nccwpck_require__(9809);
 const IDENTITY_PROVIDER = 'token.actions.githubusercontent.com';
 const AUDIENCE = 'cognito-identity.amazonaws.com';
+const NON_RETRYABLE_AUTH_ERRORS = new Set([
+    'ValidationException',
+    'NotAuthorizedException',
+    'ResourceNotFoundException',
+    'InvalidIdentityPoolConfigurationException',
+    'InvalidParameterException',
+]);
+function isRetryableAuthError(error) {
+    const name = error instanceof Error ? error.name : '';
+    return !NON_RETRYABLE_AUTH_ERRORS.has(name);
+}
+async function fetchAndMaskOidcToken() {
+    const token = await core.getIDToken(AUDIENCE);
+    core.setSecret(token);
+    return token;
+}
 async function getCognitoCredentials(config) {
-    const retryOpts = { ...config.retryOptions };
+    const retryOpts = { shouldRetry: isRetryableAuthError, ...config.retryOptions };
     core.info('Requesting GitHub OIDC token...');
-    const oidcToken = await (0, retry_1.retryWithBackoff)(() => core.getIDToken(AUDIENCE), { label: 'GitHub OIDC token', ...retryOpts });
-    core.setSecret(oidcToken);
+    await (0, retry_1.retryWithBackoff)(() => fetchAndMaskOidcToken(), { label: 'GitHub OIDC token', ...retryOpts });
     const client = new client_cognito_identity_1.CognitoIdentityClient({ region: config.region });
-    const logins = { [IDENTITY_PROVIDER]: oidcToken };
     core.info('Exchanging OIDC token for Cognito identity...');
-    const { IdentityId } = await (0, retry_1.retryWithBackoff)(() => client.send(new client_cognito_identity_1.GetIdCommand({
-        IdentityPoolId: config.poolId,
-        AccountId: config.accountId,
-        Logins: logins,
-    })), { label: 'Cognito GetId', ...retryOpts });
+    const { IdentityId } = await (0, retry_1.retryWithBackoff)(async () => {
+        const token = await fetchAndMaskOidcToken();
+        return client.send(new client_cognito_identity_1.GetIdCommand({
+            IdentityPoolId: config.poolId,
+            AccountId: config.accountId,
+            Logins: { [IDENTITY_PROVIDER]: token },
+        }));
+    }, { label: 'Cognito GetId', ...retryOpts });
     if (!IdentityId) {
         throw new Error('Failed to obtain Identity ID from Cognito Identity Pool');
     }
     core.info('Obtaining AWS credentials from Cognito...');
-    const { Credentials } = await (0, retry_1.retryWithBackoff)(() => client.send(new client_cognito_identity_1.GetCredentialsForIdentityCommand({
-        IdentityId,
-        Logins: logins,
-    })), { label: 'Cognito GetCredentials', ...retryOpts });
+    const { Credentials } = await (0, retry_1.retryWithBackoff)(async () => {
+        const token = await fetchAndMaskOidcToken();
+        return client.send(new client_cognito_identity_1.GetCredentialsForIdentityCommand({
+            IdentityId,
+            Logins: { [IDENTITY_PROVIDER]: token },
+        }));
+    }, { label: 'Cognito GetCredentials', ...retryOpts });
     if (!Credentials?.AccessKeyId || !Credentials?.SecretKey || !Credentials?.SessionToken) {
         throw new Error('Failed to obtain AWS credentials from Cognito');
     }
@@ -49830,13 +49850,13 @@ exports.DEFAULT_BASE_DELAY_MS = 8000;
 const JITTER_MIN_PCT = 50;
 const JITTER_RANGE_PCT = 50;
 async function retryWithBackoff(fn, options) {
-    const { label, maxAttempts = exports.DEFAULT_MAX_ATTEMPTS, baseDelayMs = exports.DEFAULT_BASE_DELAY_MS } = options;
+    const { label, maxAttempts = exports.DEFAULT_MAX_ATTEMPTS, baseDelayMs = exports.DEFAULT_BASE_DELAY_MS, shouldRetry = () => true, } = options;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
             return await fn();
         }
         catch (error) {
-            if (attempt === maxAttempts) {
+            if (attempt === maxAttempts || !shouldRetry(error)) {
                 throw error;
             }
             const jitterPct = JITTER_MIN_PCT + (0, node_crypto_1.randomInt)(JITTER_RANGE_PCT + 1);

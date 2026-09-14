@@ -12,19 +12,25 @@ export interface RetryOptions {
   label: string;
   maxAttempts?: number;
   baseDelayMs?: number;
+  shouldRetry?: (error: unknown) => boolean;
 }
 
 export async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   options: RetryOptions
 ): Promise<T> {
-  const { label, maxAttempts = DEFAULT_MAX_ATTEMPTS, baseDelayMs = DEFAULT_BASE_DELAY_MS } = options;
+  const {
+    label,
+    maxAttempts = DEFAULT_MAX_ATTEMPTS,
+    baseDelayMs = DEFAULT_BASE_DELAY_MS,
+    shouldRetry = () => true,
+  } = options;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (error) {
-      if (attempt === maxAttempts) {
+      if (attempt === maxAttempts || !shouldRetry(error)) {
         throw error;
       }
       const jitterPct = JITTER_MIN_PCT + randomInt(JITTER_RANGE_PCT + 1);

@@ -9,6 +9,25 @@ import { retryWithBackoff, RetryOptions } from './retry';
 const IDENTITY_PROVIDER = 'token.actions.githubusercontent.com';
 const AUDIENCE = 'cognito-identity.amazonaws.com';
 
+const NON_RETRYABLE_AUTH_ERRORS = new Set([
+  'ValidationException',
+  'NotAuthorizedException',
+  'ResourceNotFoundException',
+  'InvalidIdentityPoolConfigurationException',
+  'InvalidParameterException',
+]);
+
+function isRetryableAuthError(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : '';
+  return !NON_RETRYABLE_AUTH_ERRORS.has(name);
+}
+
+async function fetchAndMaskOidcToken(): Promise<string> {
+  const token = await core.getIDToken(AUDIENCE);
+  core.setSecret(token);
+  return token;
+}
+
 export interface AuthConfig {
   poolId: string;
   accountId: string;
@@ -24,25 +43,26 @@ export interface AwsCredentials {
 }
 
 export async function getCognitoCredentials(config: AuthConfig): Promise<AwsCredentials> {
-  const retryOpts = { ...config.retryOptions };
+  const retryOpts = { shouldRetry: isRetryableAuthError, ...config.retryOptions };
 
   core.info('Requesting GitHub OIDC token...');
-  const oidcToken = await retryWithBackoff(
-    () => core.getIDToken(AUDIENCE),
+  await retryWithBackoff(
+    () => fetchAndMaskOidcToken(),
     { label: 'GitHub OIDC token', ...retryOpts }
   );
-  core.setSecret(oidcToken);
 
   const client = new CognitoIdentityClient({ region: config.region });
-  const logins = { [IDENTITY_PROVIDER]: oidcToken };
 
   core.info('Exchanging OIDC token for Cognito identity...');
   const { IdentityId } = await retryWithBackoff(
-    () => client.send(new GetIdCommand({
-      IdentityPoolId: config.poolId,
-      AccountId: config.accountId,
-      Logins: logins,
-    })),
+    async () => {
+      const token = await fetchAndMaskOidcToken();
+      return client.send(new GetIdCommand({
+        IdentityPoolId: config.poolId,
+        AccountId: config.accountId,
+        Logins: { [IDENTITY_PROVIDER]: token },
+      }));
+    },
     { label: 'Cognito GetId', ...retryOpts }
   );
 
@@ -52,10 +72,13 @@ export async function getCognitoCredentials(config: AuthConfig): Promise<AwsCred
 
   core.info('Obtaining AWS credentials from Cognito...');
   const { Credentials } = await retryWithBackoff(
-    () => client.send(new GetCredentialsForIdentityCommand({
-      IdentityId,
-      Logins: logins,
-    })),
+    async () => {
+      const token = await fetchAndMaskOidcToken();
+      return client.send(new GetCredentialsForIdentityCommand({
+        IdentityId,
+        Logins: { [IDENTITY_PROVIDER]: token },
+      }));
+    },
     { label: 'Cognito GetCredentials', ...retryOpts }
   );
 

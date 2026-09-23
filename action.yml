@@ -354,33 +354,12 @@ runs:
         echo "decision=$decision" >> "$GITHUB_OUTPUT"
         echo "::endgroup::"
 
-    - name: Prepare local cache-metrics sub-action
-      id: cache-metrics-prep
-      if: steps.ci-metrics-gate.outputs.decision == 'true'
-      shell: bash
-      # Fail-open: the metrics flow must never break the cache flow. The next step's `if:` will skip gracefully if preparation fails.
-      run: |
-        echo "::group::Prepare .actions/cache-metrics symlink"
-        set +e
-        ACTION_PATH_CACHE="${{ github.action_path }}"
-        echo "github.action_path=$ACTION_PATH_CACHE"
-        mkdir -p .actions
-        ln -sf "$ACTION_PATH_CACHE/cache-metrics" .actions/cache-metrics
-        ls -la .actions/*
-        if [ ! -e .actions/cache-metrics/action.yml ]; then
-          echo "::warning::cache-metrics: could not prepare .actions/cache-metrics symlink — skipping metrics."
-          echo "prepared=false" >> "$GITHUB_OUTPUT"
-          echo "::endgroup::"
-          exit 0
-        fi
-        echo "prepared=true" >> "$GITHUB_OUTPUT"
-        echo "::endgroup::"
-        exit 0
-
     - name: Emit cache metrics (size + saved)
-      if: steps.cache-metrics-prep.outputs.prepared == 'true'
+      if: steps.ci-metrics-gate.outputs.decision == 'true'
       id: cache-metrics
-      uses: ./.actions/cache-metrics
+      # Use a versioned action reference so the runner stores the action outside the caller checkout.
+      # This preserves its post step without creating an untracked workspace symlink.
+      uses: SonarSource/gh-action_cache/cache-metrics@v1
       with:
         path: ${{ inputs.path }}
         key: ${{ inputs.key }}
@@ -396,15 +375,6 @@ runs:
       uses: SonarSource/gh-action_cache/credential-guard@v1
       with:
         credentials-file: ${{ steps.aws-auth.outputs.credentials-file }}
-
-    # Must be the LAST main step so its post fires FIRST in the LIFO post phase: it recreates `.actions/cache-metrics` before
-    # cache-metrics-post resolves `uses: ./.actions/cache-metrics`, surviving destruction by an external action between cache-metrics-main
-    # and cache-metrics-post.
-    - name: Symlink keeper (preserve .actions/cache-metrics across nested checkouts)
-      if: steps.cache-metrics-prep.outputs.prepared == 'true'
-      uses: SonarSource/gh-action_cache/symlink-keeper@symlink-keeper-1.0.0
-      with:
-        cache-metrics-action-path: ${{ format('{0}/cache-metrics', github.action_path) }}
 
 branding:
   icon: upload-cloud

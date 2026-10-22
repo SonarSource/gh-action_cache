@@ -169,7 +169,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest requests
 
-      # Post-step: credential-guard restores real creds, then runs-on/cache saves
+      # Post-step: credential-guard restores real creds, then step-security/runs-on-cache saves
       # If this job succeeds, the credential guard is working correctly
 
   # Reproduces: "Unable to parse config file C:\Users\runneradmin/.aws/config"
@@ -401,7 +401,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest requests
 
-      # SUCCESS: credential-guard post step runs, then runs-on/cache saves to S3
+      # SUCCESS: credential-guard post step runs, then step-security/runs-on-cache saves to S3
 
   # Validates cache-size-bytes output + ${CI_METRICS_DIR}/cache-*.json (gated by CI_METRICS_ENABLED).
   test-cache-metrics-output:

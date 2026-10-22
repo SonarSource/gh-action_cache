@@ -38,7 +38,7 @@ anything under `src/` changes.** `.gitignore` already filters out the unwanted `
 Four pieces cooperate; understanding their interplay requires reading more than one file:
 
 - **Top-level composite action** (`action.yml`): chooses backend (`github` vs `s3`); on the S3 path it
-  chains `credential-setup` → `scripts/prepare-keys.sh` → import-mode decision → `runs-on/cache` →
+  chains `credential-setup` → `scripts/prepare-keys.sh` → import-mode decision → `step-security/runs-on-cache` →
   optional `actions/cache/restore` GitHub-cache fallback → `credential-guard` post step.
 
 - **`credential-setup`** (`src/credential-setup.ts` → `credential-setup/dist/index.js`,
@@ -50,7 +50,7 @@ Four pieces cooperate; understanding their interplay requires reading more than 
 - **`credential-guard`** (`src/credential-guard-main.ts` + `src/credential-guard-post.ts`,
   manifest in `credential-guard/action.yml`): the main step only stores the credentials-file path via
   `core.saveState`. The **post** step re-reads the file, exports creds to `GITHUB_ENV` and writes
-  `~/.aws/credentials`/`config`, so the LIFO-ordered `runs-on/cache` post step can save back to S3.
+  `~/.aws/credentials`/`config`, so the LIFO-ordered `step-security/runs-on-cache` post step can save back to S3.
   See `action.yml:218-222` for the LIFO ordering rationale.
 
 - **`cleanup`** (`cleanup/action.yml` + `scripts/cleanup-cache.sh`): standalone Bash list/delete tool

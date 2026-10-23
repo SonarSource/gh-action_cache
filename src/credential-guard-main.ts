@@ -13,5 +13,5 @@ export async function run(): Promise<void> {
 
 /* istanbul ignore next */
 if (!process.env.VITEST) {
-  run();
+  void run();
 }

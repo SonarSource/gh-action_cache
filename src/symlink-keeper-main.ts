@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 
-export async function run(): Promise<void> {
+export function run(): void {
   const cacheMetricsActionPath = core.getInput('cache-metrics-action-path');
   if (cacheMetricsActionPath) {
     core.saveState('cache-metrics-action-path', cacheMetricsActionPath);

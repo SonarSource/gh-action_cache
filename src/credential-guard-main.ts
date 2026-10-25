@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 
-export async function run(): Promise<void> {
+export function run(): void {
   try {
     const credentialsFile = core.getInput('credentials-file', { required: true });
     core.saveState('credentials-file', credentialsFile);

@@ -1,0 +1,25 @@
+name: Cache caller regression
+description: Exercise the cache action through an indirect composite caller
+inputs:
+  path:
+    description: Cache data outside the checkout
+    required: true
+  key:
+    description: Unique cache key
+    required: true
+outputs:
+  cache-size-bytes:
+    description: Restore size from the nested cache action
+    value: ${{ steps.cache.outputs.cache-size-bytes }}
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/cache-candidate
+      id: cache
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        environment: dev
+        backend: s3
+        import-github-cache: 'false'
+        fallback-to-default-branch: 'false'

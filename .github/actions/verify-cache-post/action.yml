@@ -1,0 +1,7 @@
+name: Verify cache post metrics
+description: Assert that both cache invocations complete their post measurements
+runs:
+  using: node24
+  main: verify.mjs
+  post: verify.mjs
+  post-if: always()

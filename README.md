@@ -1,5 +1,7 @@
 # `gh-action_cache`
 
+This action saves and restores files in a cache to speed up GitHub Actions workflows.
+
 Adaptive cache action that uses SonarSource S3 cache for all repositories, with seamless compatibility with the standard GitHub Actions
 cache interface.
 

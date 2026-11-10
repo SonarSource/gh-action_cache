@@ -361,9 +361,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest requests
 
-  # Regression test: with CI_METRICS_ENABLED, the cache-metrics post step must still find
-  # `./.actions/cache-metrics` after another action runs actions/checkout (clean + reset + force-checkout),
-  # which is what wiped the symlink in https://github.com/SonarSource/sonar-dummy/actions/runs/26102811096/job/76758257880
+  # Metrics main and post code must survive a nested checkout with cleanup enabled.
   test-s3-cache-survives-git-clean-with-metrics:
     runs-on: sonar-xs
     permissions:
@@ -390,9 +388,7 @@ jobs:
           environment: dev
           backend: s3
 
-      # Simulate what a nested actions/checkout does (clean → reset --hard → fetch → checkout --force).
-      # This is the sequence that wiped `.actions/cache-metrics` from the workspace between main and post
-      # in the pre-commit job — recovery is handled by the `symlink-keeper` post step.
+      # The repository-qualified metrics action stays outside the checkout cleanup scope.
       - name: Re-run actions/checkout (simulates nested action's checkout)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -633,6 +629,59 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
+  test-cache-clean-caller:
+    runs-on: sonar-xs
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      CI_METRICS_ENABLED: 'true'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # Only the test fixture is excluded. Production writes such as .actions remain visible.
+      - name: Prepare cache action with candidate metrics
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(grep -Fc 'uses: SonarSource/gh-action_cache/cache-metrics@v1' action.yml)" -eq 1
+          candidate_dir="$RUNNER_TEMP/cache-action-candidate"
+          mkdir -p "$candidate_dir"
+          cp -R scripts "$candidate_dir/scripts"
+          sed "s|uses: SonarSource/gh-action_cache/cache-metrics@v1|uses: SonarSource/gh-action_cache/cache-metrics@$CANDIDATE_SHA|" \
+            action.yml > "$candidate_dir/action.yml"
+          ln -s "$candidate_dir" .github/actions/cache-candidate
+          printf '%s\n' '/.github/actions/cache-candidate' >> "$(git rev-parse --git-path info/exclude)"
+      - name: Set metrics directory outside the checkout
+        run: echo "CI_METRICS_DIR=$RUNNER_TEMP/clean-caller-metrics" >> "$GITHUB_ENV"
+      # Register first so this post assertion runs after both cache saves in LIFO order.
+      - uses: ./.github/actions/verify-cache-post
+      - name: Cache through a composite caller
+        id: first
+        uses: ./.github/actions/cache-caller
+        with:
+          path: ${{ runner.temp }}/clean-caller-cache
+          key: clean-caller-${{ github.run_id }}-${{ github.run_attempt }}-first
+      - name: Verify checkout immediately after the composite returns
+        run: |
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Repeat cache through the composite caller
+        id: second
+        uses: ./.github/actions/cache-caller
+        with:
+          path: ${{ runner.temp }}/clean-caller-cache
+          key: clean-caller-${{ github.run_id }}-${{ github.run_attempt }}-second
+      - name: Verify checkout and restore metrics
+        env:
+          FIRST_SIZE: ${{ steps.first.outputs.cache-size-bytes }}
+          SECOND_SIZE: ${{ steps.second.outputs.cache-size-bytes }}
+        run: |
+          test -z "$(git status --porcelain --untracked-files=all)"
+          test -n "$FIRST_SIZE"
+          test -n "$SECOND_SIZE"
+          mkdir -p "$RUNNER_TEMP/clean-caller-cache"
+          printf '%s\n' 'cache payload' > "$RUNNER_TEMP/clean-caller-cache/payload"
+
   all-green:
     name: All Tests
     if: always()
@@ -650,6 +699,7 @@ jobs:
       - test-s3-cache-skip-redundant-save
       - test-cache-metrics-runner-hook
       - test-cache-metrics-workflow-false
+      - test-cache-clean-caller
     runs-on: sonar-xs
     steps:
       - uses: step-security/mise-action@c7396e2a2a4ad1ea43abee3317d964292da354ae # v4.0.1

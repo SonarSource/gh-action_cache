@@ -201,11 +201,19 @@ runs:
         PROBE_HIT: ${{ steps.s3-probe.outputs.cache-hit }}
         PROBE_MATCHED_KEY: ${{ steps.s3-probe.outputs.cache-matched-key }}
         FALLBACK_EXACT_KEY: ${{ steps.prepare-keys.outputs.fallback-exact-key }}
+        CACHE_REF: ${{ github.ref }}
       run: |
         echo "::group::Decide S3 cache mode"
         if [[ "$LOOKUP_ONLY" == "true" ]]; then
           MODE="lookup"
           REASON="lookup-only input set — no restore, no save"
+        elif [[ "$CACHE_REF" == refs/heads/gh-readonly-queue/* ]]; then
+          # Merge queue refs are not writable: the Cognito role denies s3:PutObject (and
+          # s3:ListBucket) on that prefix. The save post-step can sit until the job timeout
+          # after AccessDenied, so never select the combined (save-capable) action here.
+          # Restore still runs and can hit the default-branch fallback key.
+          MODE="restore-only"
+          REASON="merge queue ref '$CACHE_REF' cannot be saved — restore without a save post-step"
         elif [[ "$PROBE_HIT" == "true" ]]; then
           MODE="restore-only"
           REASON="branch-scoped key already holds exact content — restore without redundant save"
@@ -216,7 +224,7 @@ runs:
           MODE="combined"
           REASON="no usable S3 match (or a non-fallback partial match) — restore and save back under the branch-scoped key"
         fi
-        echo "mode=$MODE (matched-key='$PROBE_MATCHED_KEY', fallback-exact-key='$FALLBACK_EXACT_KEY'): $REASON"
+        echo "mode=$MODE (ref='$CACHE_REF', matched-key='$PROBE_MATCHED_KEY', fallback-exact-key='$FALLBACK_EXACT_KEY'): $REASON"
         echo "mode=$MODE" >> "$GITHUB_OUTPUT"
         echo "::endgroup::"
 

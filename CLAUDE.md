@@ -82,12 +82,18 @@ the matching job:
 - **GitHub-cache import fallback resolution** (`action.yml:135-162`): five-step priority chain ending
   in "private/internal repo → false". When active, it suppresses `fail-on-cache-miss` on the S3 step
   and enforces it later, after also trying the GitHub-cache restore.
-- **Skip redundant save on exact fallback match** (`s3-decide` step, `action.yml:195-221`): when the
+- **Skip redundant save on exact fallback match** (`s3-decide` step, `action.yml`): when the
   restored key exactly matches the default-branch fallback (`refs/heads/${FALLBACK_BRANCH}/${key}`),
   the step picks a save-incapable mode (`restore-only`/`lookup`) instead of `combined`, so the
   branch never re-saves content identical to what the fallback already has. `cache-metrics` reads
   this `mode` to report `saved: false` accordingly. Regression job:
   `test-s3-cache-skip-redundant-save`.
+- **Merge queue refs are restore-only** (`s3-decide`): when `github.ref` starts with
+  `refs/heads/gh-readonly-queue/`, the Cognito role denies `s3:PutObject` on that prefix and the
+  save post-step can hang after `AccessDenied` until the job timeout. `s3-decide` returns
+  `restore-only` (unless `lookup-only` is set) so the combined cache action, which owns the save
+  post-step, never runs. The lookup probe still runs and may log `s3:ListBucket` denied; that
+  probe exits. Restore can still match the default-branch fallback key.
 
 ## Pinned environment
 

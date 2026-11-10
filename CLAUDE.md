@@ -91,9 +91,12 @@ the matching job:
 - **Merge queue refs are restore-only** (`s3-decide`): when `github.ref` starts with
   `refs/heads/gh-readonly-queue/`, the Cognito role denies `s3:PutObject` on that prefix and the
   save post-step can hang after `AccessDenied` until the job timeout. `s3-decide` returns
-  `restore-only` (unless `lookup-only` is set) so the combined cache action, which owns the save
-  post-step, never runs. The lookup probe still runs and may log `s3:ListBucket` denied; that
-  probe exits. Restore can still match the default-branch fallback key.
+  `restore-only` (unless `lookup-only` is set) and sets `readonly-ref=true`, so the combined cache
+  action, which owns the save post-step, never runs. The lookup probe still runs and may log
+  `s3:ListBucket` denied; that probe exits. Restore can still match the default-branch fallback
+  key. On a total S3 miss (`readonly-ref` and an empty restore matched-key), the GitHub import
+  fallback and `fail-on-cache-miss` enforcement still run. Other `restore-only` paths (exact hit,
+  fallback-exact) do not, because they already restored the bytes.
 
 ## Pinned environment
 

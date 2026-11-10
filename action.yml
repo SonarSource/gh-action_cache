@@ -214,6 +214,10 @@ runs:
           # Restore still runs and can hit the default-branch fallback key.
           MODE="restore-only"
           REASON="merge queue ref '$CACHE_REF' cannot be saved — restore without a save post-step"
+          # Distinct from other restore-only paths so a miss can still import from the GitHub
+          # cache and enforce fail-on-cache-miss. Those steps must not run for a fallback-exact
+          # restore-only, which already has the bytes.
+          echo "readonly-ref=true" >> "$GITHUB_OUTPUT"
         elif [[ "$PROBE_HIT" == "true" ]]; then
           MODE="restore-only"
           REASON="branch-scoped key already holds exact content — restore without redundant save"
@@ -277,10 +281,18 @@ runs:
     - name: Import GitHub cache to S3 (migration fallback)
       if: >-
         steps.cache-backend.outputs.cache-backend == 's3' &&
-        (steps.s3-decide.outputs.mode == 'combined' || steps.s3-decide.outputs.mode == 'lookup') &&
         steps.s3-probe.outputs.cache-hit != 'true' &&
-        steps.s3-cache.outputs.cache-hit != 'true' &&
-        steps.cache-backend.outputs.import-github == 'true'
+        steps.cache-backend.outputs.import-github == 'true' &&
+        (
+          (
+            (steps.s3-decide.outputs.mode == 'combined' || steps.s3-decide.outputs.mode == 'lookup') &&
+            steps.s3-cache.outputs.cache-hit != 'true'
+          ) ||
+          (
+            steps.s3-decide.outputs.readonly-ref == 'true' &&
+            steps.s3-restore.outputs.cache-matched-key == ''
+          )
+        )
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       id: github-import
       with:
@@ -293,12 +305,20 @@ runs:
     - name: Enforce fail-on-cache-miss after GitHub import fallback
       if: >-
         steps.cache-backend.outputs.cache-backend == 's3' &&
-        (steps.s3-decide.outputs.mode == 'combined' || steps.s3-decide.outputs.mode == 'lookup') &&
         steps.cache-backend.outputs.import-github == 'true' &&
         inputs.fail-on-cache-miss == 'true' &&
         steps.s3-probe.outputs.cache-hit != 'true' &&
-        steps.s3-cache.outputs.cache-hit != 'true' &&
-        steps.github-import.outputs.cache-matched-key == ''
+        steps.github-import.outputs.cache-matched-key == '' &&
+        (
+          (
+            (steps.s3-decide.outputs.mode == 'combined' || steps.s3-decide.outputs.mode == 'lookup') &&
+            steps.s3-cache.outputs.cache-hit != 'true'
+          ) ||
+          (
+            steps.s3-decide.outputs.readonly-ref == 'true' &&
+            steps.s3-restore.outputs.cache-matched-key == ''
+          )
+        )
       shell: bash
       env:
         CACHE_KEY: ${{ inputs.key }}

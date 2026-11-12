@@ -80,5 +80,7 @@ export async function run(): Promise<void> {
 
 /* istanbul ignore next */
 if (!process.env.VITEST) {
-  run();
+  run().catch((error: unknown) => {
+    core.warning(`Failed to restore credentials: ${error instanceof Error ? error.message : error}`);
+  });
 }

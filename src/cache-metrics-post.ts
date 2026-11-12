@@ -6,7 +6,7 @@ import {
   writeMetricsFile,
 } from './cache-metrics';
 
-export async function run(): Promise<void> {
+export function run(): void {
   try {
     const metricsFile = core.getState('metricsFile');
     if (!metricsFile) {

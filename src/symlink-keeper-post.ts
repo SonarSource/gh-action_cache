@@ -59,5 +59,6 @@ export async function run(): Promise<void> {
 
 /* istanbul ignore next */
 if (!process.env.VITEST) {
-  run();
+  // ensureCacheMetricsSymlink handles its own errors, so this promise is not expected to reject.
+  void run();
 }

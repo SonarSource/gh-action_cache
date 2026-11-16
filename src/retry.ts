@@ -26,11 +26,15 @@ export async function retryWithBackoff<T>(
     shouldRetry = () => true,
   } = options;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  if (maxAttempts < 1) {
+    throw new Error(`${label} failed after ${maxAttempts} attempts`);
+  }
+
+  const attemptCall = async (attempt: number): Promise<T> => {
     try {
       return await fn();
     } catch (error) {
-      if (attempt === maxAttempts || !shouldRetry(error)) {
+      if (attempt >= maxAttempts || !shouldRetry(error)) {
         throw error;
       }
       const jitterPct = JITTER_MIN_PCT + randomInt(JITTER_RANGE_PCT + 1);
@@ -40,8 +44,9 @@ export async function retryWithBackoff<T>(
         `${label} failed (attempt ${attempt}/${maxAttempts}): ${message}. Retrying in ${delayMs}ms...`
       );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return attemptCall(attempt + 1);
     }
-  }
-  // Unreachable, but satisfies TypeScript
-  throw new Error(`${label} failed after ${maxAttempts} attempts`);
+  };
+
+  return attemptCall(1);
 }

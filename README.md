@@ -8,7 +8,7 @@ cache interface.
 - Supports all standard cache inputs and outputs
 - Automatic migration from GitHub Actions cache to S3 (no cold starts)
 
-For S3-only generated-build caches and same-run artifacts, see the separate [native storage entry point](s3/README.md).
+For generated-build ownership controls and same-run artifacts, use the optional inputs below on this existing action.
 
 ## Requirements
 
@@ -647,58 +647,50 @@ After the PR is merged to `master`:
 
 The tag is what callers pin to in production.
 
-## S3-only CI storage (preview)
+## Same-run artifacts (preview)
 
-The `s3` sub-action is an explicit S3-only entry point for producer/consumer pipelines and run artifacts.
-It never invokes the GitHub cache or artifact APIs. It uses the same isolated Cognito authentication as the root action.
-The root action remains available with its existing migration and backend options.
+Set `operation: upload` or `operation: download` on the existing root action. The default operation is `cache`.
+These artifact operations reuse the S3 backend and the current production bucket, branch namespace and OIDC/Cognito credentials.
+They never invoke GitHub cache or artifact actions. For generated-build caches, set `import-github-cache: 'false'`
+and use the explicit `save` controls above.
 
-```yaml
-- uses: SonarSource/gh-action_cache/s3@<commit>
-  with:
-    operation: cache
-    path: node_modules
-    key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-    lookup-only: 'true'
-    save: 'true'
-```
-
-Cache consumers omit `save` (default `false`); use `fail-on-cache-miss: 'true'` for required handoffs.
-A producer can probe without extracting and save only in a successful post-job phase.
-Exact manifests take priority over prefixes. Search each ref in order: current canonical ref, PR base, repository default.
-Within each ref, try the primary exact key, then each explicit restore prefix, selecting the newest match.
-An exact logical fallback hit suppresses a redundant save. Merge queues cannot register a cache saver.
-Cache versions include the declared paths, operating system (unless cross-OS is enabled), and archive format.
-PR caches use `refs/pull/<number>/merge`, preserving PR isolation.
-The native namespace is separate from legacy cache objects and starts cold.
+The upload `key` is a logical name. Uploads return an `artifact-key` containing the workflow run and producer attempt.
+Expose it as a job output and pass it to the consumer, so a consumer-only retry uses the successful original producer.
 
 ```yaml
-- uses: SonarSource/gh-action_cache/s3@<commit>
-  with:
-    operation: upload
-    name: build-output
-    path: '**/target/'
-    retention-days: '1'
-    if-no-files-found: error
-- uses: SonarSource/gh-action_cache/s3@<commit>
-  with:
-    operation: download
-    name: build-output
-    path: .
+jobs:
+  produce:
+    outputs:
+      artifact: ${{ steps.upload.outputs.artifact-key }}
+    steps:
+      # Checkout and build first.
+      - uses: SonarSource/gh-action_cache@<commit>
+        id: upload
+        with:
+          operation: upload
+          key: build-output
+          path: '**/target/'
+          if-no-files-found: error
+  consume:
+    needs: produce
+    steps:
+      - uses: SonarSource/gh-action_cache@<commit>
+        with:
+          operation: download
+          key: ${{ needs.produce.outputs.artifact }}
+          path: .
 ```
 
-Artifacts are scoped to repository, ref, originating run, name, and producer attempt.
-Downloads select the newest published attempt for that exact name/run, so retried consumers retain successful earlier producers.
-This preview deliberately covers artifacts exchanged within a Build run. Producers always use their own run and ref.
-A duplicate upload for the same name and attempt fails.
-Build artifact downloads expire after one day; physical objects follow the existing cache bucket lifecycle.
-Expired artifacts are refused before download, independently of asynchronous S3 lifecycle deletion.
-Downloads are required: an absent artifact fails the step. Uploads support `if-no-files-found: error`, `warn` (default), or `ignore`.
+Artifact downloads are required and exact: absent objects fail without prefix or branch fallback.
+Duplicate uploads of the same name in one producer attempt fail an atomic conditional write.
+The internal adapter only packages paths relative to their common root, checks identity/size/SHA-256/one-day availability,
+and extracts at the requested destination. It preserves executable bits and symlinks, honors glob exclusions,
+and excludes hidden upload files. The existing backend handles compression, multipart upload and concurrent download.
+A fixed staging path, cross-OS cache version and gzip allow Linux, Windows and minimal containers to exchange the same archive.
 
-Archives preserve executable bits and symlinks, use the common root before globs, honor exclusions, and verify SHA-256 before extraction.
-Hidden cache files are retained; hidden artifact files are excluded. Uploads stream in parallel multipart chunks.
-A conditional manifest commit prevents competing writers from replacing completed results; uncommitted payloads expire with their namespace.
-Credentials are acquired through an explicit SDK provider and are never exported to the caller's environment or AWS configuration files.
+Availability expires after one day and is checked after restore, before extraction. Physical objects follow the existing
+30-day cache bucket lifecycle. This preview needs no infrastructure deployment. Cross-run discovery, artifact UI integration,
+and automatic PR-close cleanup are outside this interface.
 
-The infrastructure must grant canonical-ref cache writes, own-ref artifact access, and multipart aborts,
-and configure physical artifact expiration before enabling this preview in a production pipeline.
+The artifact path currently pins a draft of the existing backend with four opt-in policies: immutable writes,
+failed-save errors, exact-key lookup and portable gzip. Ordinary cache calls retain their released backend pin and behavior.

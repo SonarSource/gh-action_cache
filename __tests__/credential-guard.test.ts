@@ -139,11 +139,11 @@ describe('credential-guard-post', () => {
 
     // Verify directory permissions (0o700)
     const awsDirStat = await fs.stat(path.join(fakeAwsHome, '.aws'));
-    if (process.platform !== 'win32') expect(awsDirStat.mode & 0o777).toBe(0o700);
+    expect(awsDirStat.mode & 0o777).toBe(0o700);
 
     // Verify file permissions (0o600)
     const credsStat = await fs.stat(path.join(fakeAwsHome, '.aws', 'credentials'));
-    if (process.platform !== 'win32') expect(credsStat.mode & 0o777).toBe(0o600);
+    expect(credsStat.mode & 0o777).toBe(0o600);
   });
 
   it('writes ~/.aws/config with correct region', async () => {
@@ -175,7 +175,7 @@ describe('credential-guard-post', () => {
 
     // Verify file permissions (0o600)
     const configStat = await fs.stat(path.join(fakeAwsHome, '.aws', 'config'));
-    if (process.platform !== 'win32') expect(configStat.mode & 0o777).toBe(0o600);
+    expect(configStat.mode & 0o777).toBe(0o600);
   });
 
   it('logs fallback message after writing credentials file', async () => {

@@ -4,7 +4,17 @@ import * as os from 'os';
 import * as path from 'path';
 import { getCognitoCredentials } from './auth';
 
-import { POOL_IDS, ACCOUNT_IDS, AWS_REGION } from './environment';
+const POOL_IDS: Record<string, string> = {
+  prod: 'eu-central-1:511fe374-ae4f-46d0-adb7-9246e570c7f4',
+  dev: 'eu-central-1:3221c6ea-3f67-4fd8-a7ff-7426f96add89',
+};
+
+const ACCOUNT_IDS: Record<string, string> = {
+  prod: '275878209202',
+  dev: '460386131003',
+};
+
+const AWS_REGION = 'eu-central-1';
 
 function getCredentialsDir(): string {
   if (process.env.__TEST_CREDS_DIR) return process.env.__TEST_CREDS_DIR;

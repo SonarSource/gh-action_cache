@@ -18,6 +18,9 @@ cache-metrics/dist/**/*.d.ts.map
 symlink-keeper/dist/**/*.d.ts
 symlink-keeper/dist/**/*.d.ts.map
 
+artifact/dist/**/*.d.ts
+artifact/dist/**/*.d.ts.map
+
 # Test coverage
 coverage/
 *.lcov
@@ -38,5 +41,3 @@ Thumbs.db
 .idea
 .npm
 .serena
-s3/dist/**/*.d.ts
-s3/dist/**/*.d.ts.map

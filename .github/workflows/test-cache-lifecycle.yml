@@ -7,8 +7,8 @@ on:
     branches: [master]
   workflow_dispatch:
     inputs:
-      verify-native-storage:
-        description: Run native S3 integration with the existing production cache credentials
+      verify-artifacts:
+        description: Run artifact S3 integration with the existing production cache credentials
         type: boolean
         default: false
       verify-failed-producer:
@@ -20,8 +20,8 @@ permissions:
   contents: read
 
 jobs:
-  native-storage:
-    if: github.event_name == 'workflow_dispatch' && inputs.verify-native-storage
+  artifacts:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify-artifacts
     uses: ./.github/workflows/test-s3-storage.yml
     permissions:
       contents: read
@@ -58,9 +58,9 @@ jobs:
       - run: npm test
       - run: npx tsc --noEmit
       - run: npm run build
-      - name: Check committed native and metrics bundles
+      - name: Check committed artifact and metrics bundles
         if: runner.os == 'Linux'
-        run: git diff --exit-code -- cache-metrics/dist/ s3/dist/
+        run: git diff --exit-code -- cache-metrics/dist/ artifact/dist/
 
   populate:
     strategy:

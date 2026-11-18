@@ -76020,36 +76020,9 @@ async function fallbackRefs(current) {
     const base = current.startsWith('refs/pull/') ? (event.pull_request?.base?.ref || process.env.GITHUB_BASE_REF) : undefined;
     return [...new Set([current, ...(base ? [`refs/heads/${base}`] : []), `refs/heads/${defaultBranch}`])];
 }
-async function cache(post) {
-    const paths = required('path');
-    const key = required('key');
-    const ref = s.storageRef();
-    const version = s.cacheVersion(paths, enabled('enableCrossOsArchive'));
-    const suffix = `${version}/${encodeURIComponent(key)}.json`;
-    const environment = input('environment') || 'prod';
-    const bucket = `sonarsource-s3-cache-${environment}-bucket`;
-    const client = await s.clientFor(environment);
-    if (post) {
-        if (core.getState('save') !== 'true')
-            return;
-        await s.temporary(async (work) => {
-            const result = await s.archive(paths, work);
-            if (!result)
-                throw new Error('Cache producer succeeded without creating its declared paths');
-            try {
-                await s.publish(client, bucket, s.prefix('cache', ref) + suffix, s.manifestBase('cache', ref, key, result.rootIsFile, 30), result.file);
-                core.info(`Published S3 cache ${key}`);
-            }
-            catch (error) {
-                if (!s.isConflict(error))
-                    throw error;
-                core.info('Another successful producer already published this cache key');
-            }
-        });
-        return;
-    }
+async function findCache(client, bucket, refs, version, key, restoreKeys) {
     let selected;
-    for (const candidateRef of await fallbackRefs(ref)) {
+    for (const candidateRef of refs) {
         const root = `${s.prefix('cache', candidateRef)}${version}/`;
         const exactKey = root + `${encodeURIComponent(key)}.json`;
         // Prefix-scoped IAM can return 403 for a missing GET. List the exact name
@@ -76060,7 +76033,7 @@ async function cache(post) {
             selected = s.validateManifest(exact, { kind: 'cache', ref: candidateRef, repository: process.env.GITHUB_REPOSITORY, name: key });
             break;
         }
-        for (const restoreKey of s.lines(input('restore-keys'))) {
+        for (const restoreKey of restoreKeys) {
             const candidates = (await s.objects(client, bucket, root + encodeURIComponent(restoreKey)))
                 .filter(o => o.Key.endsWith('.json')).sort((a, b) => b.LastModified.getTime() - a.LastModified.getTime() || a.Key.localeCompare(b.Key));
             if (candidates.length) {
@@ -76072,6 +76045,37 @@ async function cache(post) {
         if (selected)
             break;
     }
+    return selected;
+}
+async function cache(post) {
+    const paths = required('path');
+    const key = required('key');
+    const ref = s.storageRef();
+    const version = s.cacheVersion(paths, enabled('enableCrossOsArchive'));
+    const suffix = `${version}/${encodeURIComponent(key)}.json`;
+    const environment = input('environment') || 'prod';
+    const bucket = `sonarsource-s3-cache-${environment}-bucket`;
+    const client = s.clientFor(environment);
+    if (post) {
+        if (core.getState('save') !== 'true')
+            return;
+        await s.temporary(async (work) => {
+            const result = await s.archive(paths, work);
+            if (!result)
+                throw new Error('Cache producer succeeded without creating its declared paths');
+            try {
+                await s.publish(client, bucket, s.prefix('cache', ref) + suffix, s.manifestBase('cache', ref, key, result.rootIsFile, s.CACHE_RETENTION_DAYS), result.file);
+                core.info(`Published S3 cache ${key}`);
+            }
+            catch (error) {
+                if (!s.isConflict(error))
+                    throw error;
+                core.info('Another successful producer already published this cache key');
+            }
+        });
+        return;
+    }
+    const selected = await findCache(client, bucket, await fallbackRefs(ref), version, key, s.lines(input('restore-keys')));
     const exact = selected?.name === key;
     core.setOutput('cache-hit', selected ? String(exact) : '');
     core.setOutput('cache-found', String(!!selected));
@@ -76086,37 +76090,40 @@ async function cache(post) {
         core.setOutput('cache-restored', 'true');
     }
 }
+async function uploadArtifact(client, bucket, root, ref, name, work) {
+    if ((input('retention-days') || '1') !== '1')
+        throw new Error('Build artifact storage requires the one-day bucket lifecycle');
+    const result = await s.archive(required('path'), work, false);
+    if (!result) {
+        const policy = input('if-no-files-found') || 'warn';
+        if (policy === 'error')
+            throw new Error('No files found for the required artifact');
+        if (policy === 'warn')
+            core.warning(`No files found for artifact ${name}`);
+        return;
+    }
+    const m = s.manifestBase('artifact', ref, name, result.rootIsFile, 1);
+    const saved = await s.publish(client, bucket, `${root}${m.attempt}.json`, m, result.file);
+    core.setOutput('artifact-digest', saved.digest);
+    core.setOutput('producer-attempt', saved.attempt);
+    core.info(`Published ${saved.bytes} bytes for ${name} (producer attempt ${saved.attempt})`);
+}
 async function artifact(operation) {
     const name = required('name');
     const runId = process.env.GITHUB_RUN_ID;
     const ref = s.storageRef();
     const environment = input('environment') || 'prod';
     const bucket = `sonarsource-s3-cache-${environment}-bucket`;
-    const client = await s.clientFor(environment);
+    const client = s.clientFor(environment);
     const root = `${s.prefix('artifact', ref)}runs/${runId}/${encodeURIComponent(name)}/`;
     await s.temporary(async (work) => {
         if (operation === 'upload') {
-            if ((input('retention-days') || '1') !== '1')
-                throw new Error('Build artifact storage requires the one-day bucket lifecycle');
-            const result = await s.archive(required('path'), work, false);
-            if (!result) {
-                const policy = input('if-no-files-found') || 'warn';
-                if (policy === 'error')
-                    throw new Error('No files found for the required artifact');
-                if (policy === 'warn')
-                    core.warning(`No files found for artifact ${name}`);
-                return;
-            }
-            const m = s.manifestBase('artifact', ref, name, result.rootIsFile, 1);
-            const saved = await s.publish(client, bucket, `${root}${m.attempt}.json`, m, result.file);
-            core.setOutput('artifact-digest', saved.digest);
-            core.setOutput('producer-attempt', saved.attempt);
-            core.info(`Published ${saved.bytes} bytes for ${name} (producer attempt ${saved.attempt})`);
+            await uploadArtifact(client, bucket, root, ref, name, work);
         }
         else {
             // A retried consumer resolves the successful producer's stored attempt, not its own attempt number.
             const candidates = (await s.objects(client, bucket, root)).filter(o => /^\d+\.json$/.test(o.Key.slice(root.length)))
-                .sort((a, b) => Number(b.Key.slice(root.length, -5)) - Number(a.Key.slice(root.length, -5)));
+                .sort((a, b) => Number(b.Key.slice(root.length, -'.json'.length)) - Number(a.Key.slice(root.length, -'.json'.length)));
             if (!candidates.length)
                 throw new Error(`Required S3 artifact not found: ${name} in run ${runId}`);
             const m = s.validateManifest(await s.jsonObject(client, bucket, candidates[0].Key), { kind: 'artifact', ref, repository: process.env.GITHUB_REPOSITORY, name });
@@ -76197,7 +76204,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.lines = exports.hash = void 0;
+exports.lines = exports.hash = exports.CACHE_RETENTION_DAYS = void 0;
 exports.storageRef = storageRef;
 exports.prefix = prefix;
 exports.cacheVersion = cacheVersion;
@@ -76229,6 +76236,10 @@ const glob = __importStar(__nccwpck_require__(7206));
 const tar = __importStar(__nccwpck_require__(5942));
 const auth_1 = __nccwpck_require__(9081);
 const environment_1 = __nccwpck_require__(2678);
+const HTTP_NOT_FOUND = 404;
+const HTTP_PRECONDITION_FAILED = 412;
+const MILLISECONDS_PER_DAY = 86400000;
+exports.CACHE_RETENTION_DAYS = 30;
 const hash = (value) => (0, node_crypto_1.createHash)('sha256').update(value).digest('hex');
 exports.hash = hash;
 const lines = (value) => value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -76263,7 +76274,7 @@ function safeEntry(entry) {
 }
 function validateManifest(value, expected, now = Date.now()) {
     const m = value;
-    if (!m || m.schema !== 1 || Object.entries(expected).some(([k, v]) => m[k] !== v) ||
+    if (m?.schema !== 1 || Object.entries(expected).some(([k, v]) => m[k] !== v) ||
         !Number.isSafeInteger(m.attempt) || m.attempt < 1 || !Number.isSafeInteger(m.bytes) || m.bytes < 0 ||
         !/^[a-f0-9]{64}$/.test(m.digest) || typeof m.rootIsFile !== 'boolean' ||
         !m.object?.startsWith(`${prefix(expected.kind, expected.ref, expected.repository)}objects/`) ||
@@ -76274,13 +76285,13 @@ function validateManifest(value, expected, now = Date.now()) {
 }
 function isMissing(error) {
     return ['NoSuchKey', 'NotFound'].includes(error?.name) ||
-        error?.$metadata?.httpStatusCode === 404;
+        error?.$metadata?.httpStatusCode === HTTP_NOT_FOUND;
 }
 function isConflict(error) {
     return error?.name === 'PreconditionFailed' ||
-        error?.$metadata?.httpStatusCode === 412;
+        error?.$metadata?.httpStatusCode === HTTP_PRECONDITION_FAILED;
 }
-async function clientFor(environment) {
+function clientFor(environment) {
     if (!environment_1.POOL_IDS[environment])
         throw new Error(`Unknown environment: ${environment}`);
     return new client_s3_1.S3Client({
@@ -76388,7 +76399,7 @@ function manifestBase(kind, ref, name, rootIsFile, days) {
         schema: 1, kind, repository: process.env.GITHUB_REPOSITORY, ref, name, rootIsFile,
         runId: process.env.GITHUB_RUN_ID, attempt: Number(process.env.GITHUB_RUN_ATTEMPT || '1'),
         sha: process.env.GITHUB_SHA, job: process.env.GITHUB_JOB,
-        expiresAt: new Date(Date.now() + days * 86400000).toISOString(),
+        expiresAt: new Date(Date.now() + days * MILLISECONDS_PER_DAY).toISOString(),
     };
 }
 

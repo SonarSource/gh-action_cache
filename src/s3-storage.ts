@@ -12,6 +12,12 @@ import * as tar from 'tar';
 import { getCognitoCredentials } from './auth';
 import { POOL_IDS, ACCOUNT_IDS, AWS_REGION } from './environment';
 
+const HTTP_NOT_FOUND = 404;
+const HTTP_PRECONDITION_FAILED = 412;
+const MILLISECONDS_PER_DAY = 86400000;
+
+export const CACHE_RETENTION_DAYS = 30;
+
 export interface Manifest {
   schema: 1;
   kind: 'cache' | 'artifact';
@@ -60,7 +66,7 @@ export function safeEntry(entry: string): boolean {
 }
 export function validateManifest(value: unknown, expected: Pick<Manifest, 'kind' | 'repository' | 'ref' | 'name'>, now = Date.now()): Manifest {
   const m = value as Manifest;
-  if (!m || m.schema !== 1 || Object.entries(expected).some(([k, v]) => m[k as keyof Manifest] !== v) ||
+  if (m?.schema !== 1 || Object.entries(expected).some(([k, v]) => m[k as keyof Manifest] !== v) ||
       !Number.isSafeInteger(m.attempt) || m.attempt < 1 || !Number.isSafeInteger(m.bytes) || m.bytes < 0 ||
       !/^[a-f0-9]{64}$/.test(m.digest) || typeof m.rootIsFile !== 'boolean' ||
       !m.object?.startsWith(`${prefix(expected.kind, expected.ref, expected.repository)}objects/`) ||
@@ -71,13 +77,13 @@ export function validateManifest(value: unknown, expected: Pick<Manifest, 'kind'
 }
 export function isMissing(error: unknown): boolean {
   return ['NoSuchKey', 'NotFound'].includes((error as Error)?.name) ||
-    (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404;
+    (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === HTTP_NOT_FOUND;
 }
 export function isConflict(error: unknown): boolean {
   return (error as Error)?.name === 'PreconditionFailed' ||
-    (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 412;
+    (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === HTTP_PRECONDITION_FAILED;
 }
-export async function clientFor(environment: string): Promise<S3Client> {
+export function clientFor(environment: string): S3Client {
   if (!POOL_IDS[environment]) throw new Error(`Unknown environment: ${environment}`);
   return new S3Client({
     region: AWS_REGION,
@@ -88,7 +94,7 @@ export async function clientFor(environment: string): Promise<S3Client> {
     },
   });
 }
-export async function jsonObject(client: S3Client, bucket: string, key: string): Promise<unknown | undefined> {
+export async function jsonObject(client: S3Client, bucket: string, key: string): Promise<unknown> {
   try {
     const { Body } = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     if (!Body) throw new Error(`Empty S3 response for ${key}`);
@@ -168,6 +174,6 @@ export function manifestBase(kind: Manifest['kind'], ref: string, name: string, 
     schema: 1, kind, repository: process.env.GITHUB_REPOSITORY!, ref, name, rootIsFile,
     runId: process.env.GITHUB_RUN_ID!, attempt: Number(process.env.GITHUB_RUN_ATTEMPT || '1'),
     sha: process.env.GITHUB_SHA!, job: process.env.GITHUB_JOB!,
-    expiresAt: new Date(Date.now() + days * 86400000).toISOString(),
+    expiresAt: new Date(Date.now() + days * MILLISECONDS_PER_DAY).toISOString(),
   };
 }

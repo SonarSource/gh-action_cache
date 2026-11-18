@@ -113,8 +113,8 @@ describe('metricsFilePath / read / write', () => {
 
   it('composes the filename from dir + pre-slugified step id', () => {
     // The caller is expected to slugify; metricsFilePath itself just composes.
-    expect(metricsFilePath('/x/m', 'cache-python')).toBe('/x/m/cache-cache-python.json');
-    expect(metricsFilePath('/x/m', slugifyStepId('!!!'))).toBe('/x/m/cache-cache.json');
+    expect(metricsFilePath('/x/m', 'cache-python')).toBe(path.join('/x/m', 'cache-cache-python.json'));
+    expect(metricsFilePath('/x/m', slugifyStepId('!!!'))).toBe(path.join('/x/m', 'cache-cache.json'));
   });
 
   it('writeMetricsFile creates the parent directory', () => {

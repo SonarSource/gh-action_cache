@@ -481,6 +481,7 @@ jobs:
         with:
           path: ~/.cache/pip
           key: skip-save-verify-${{ runner.os }}
+          save: 'true' # Opt into logical fallback-hit reporting.
           fail-on-cache-miss: false
           environment: dev
           backend: s3

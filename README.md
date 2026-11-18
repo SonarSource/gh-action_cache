@@ -29,7 +29,8 @@ For S3-only generated-build caches and same-run artifacts, see the separate [nat
 
 ### Explicit producer and consumer lifecycles
 
-Use `save` together with `lookup-only` to control ownership independently of downloading:
+The existing root action opts into the new lifecycle only when `save` is explicitly `true` or `false`.
+Use it together with `lookup-only` to control ownership independently of downloading:
 
 | `lookup-only` | `save` | Behavior |
 | --- | --- | --- |
@@ -58,15 +59,18 @@ For example, a designated producer can avoid downloading dependencies that it on
 Consumers use the same path/key with `save: 'false'` and `fail-on-cache-miss: 'true'`. Callers remain responsible for producer job
 ordering, platform separation, input fingerprints, and excluding build outputs from reusable dependency caches.
 
-If `save` is omitted, historical defaults are retained: GitHub registers success-only saves even for lookup-only calls; S3 does so only
-when `lookup-only` is false. Specify both controls for new callers.
+If `save` is omitted, the released execution path and existing outputs are preserved, including backend selection, combined cache
+actions, lookup-only behavior, physical fallback-hit values, GitHub migration restores, required misses and metrics inference.
+Following `@v1` alone does not enable the new lifecycle. GitHub may save even on lookup-only calls; S3 never saves on lookup-only
+calls. S3 saves also remain subject to its existing exact-hit and merge-queue guards. Specify both controls for new callers.
 
-`cache-hit` is `true` for an exact **logical** primary key, including S3 fallback-branch exact matches. This corrects the earlier physical
-branch-prefix comparison. Prefix/rolling matches return `false`, and misses return an empty value. `cache-matched-key` exposes the actual
+With an explicit `save` input, `cache-hit` is `true` for an exact **logical** primary key, including S3 fallback-branch exact matches.
+Prefix/rolling matches return `false`, and misses return an empty value. `cache-matched-key` exposes the actual
 matched key, including its S3 branch prefix. `cache-found` distinguishes a usable partial match from a miss; `cache-restored` additionally
-requires payload restoration and is always `false` for lookup-only calls.
+requires payload restoration and is always `false` for lookup-only calls. These two new outputs are empty when `save` is omitted.
 
-The S3 metadata probe selects the backend before payload restoration. GitHub import runs only when that probe found no S3 candidate;
+With an explicit `save` input, the S3 metadata probe selects the backend before payload restoration.
+GitHub import runs only when that probe found no S3 candidate;
 it never overlays a usable S3 partial match. If a selected S3 entry disappears, a strict consumer fails rather than falling through to
 another payload. Post-save registration uses a metadata-only call and does not extract another archive. Disable `import-github-cache`
 after seeding to remove migration lookups. Restore-only consumers never seed S3, even when they restore a GitHub fallback.
@@ -196,15 +200,15 @@ gh variable set CACHE_IMPORT_GITHUB --body "true"
 
 ### Outputs
 
-| Output              | Description                                                                                                                                   |
-|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| `cache-hit`         | Boolean indicating an exact logical match for the primary key, including S3 fallback-branch exact matches.                                    |
-| `cache-matched-key` | Actual matched key, including the S3 branch prefix; empty on a miss.                                                                          |
-| `cache-found`       | Whether a usable match was found (including partial matches and metadata probes).                                                             |
-| `cache-restored`    | Whether a payload was restored; always false for lookup-only.                                                                                 |
-| `restore-key-hit`   | The restore key that was prefix-matched. Populated only when `cache-hit` is `false` AND a restore key matched (partial hit). Empty otherwise. |
-| `backend`           | The cache backend that was actually used (`github` or `s3`).                                                                                  |
-| `cache-size-bytes`  | Total size in bytes of the cached path(s) at restore-time. Requires GNU `du` (Linux); empty on other platforms.                               |
+| Output                | Description                                                                                                                                     |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cache-hit`           | Released backend hit value; explicit `save` includes exact logical S3 fallback matches.                                                         |
+| `cache-matched-key`   | Actual matched key, including the S3 branch prefix; empty on a miss.                                                                            |
+| `cache-found`         | With explicit `save`, whether a usable match was found; empty otherwise.                                                                        |
+| `cache-restored`      | With explicit `save`, whether a payload was restored; empty otherwise.                                                                          |
+| `restore-key-hit`     | The restore key that was prefix-matched. Populated only when `cache-hit` is `false` AND a restore key matched (partial hit). Empty otherwise.   |
+| `backend`             | The cache backend that was actually used (`github` or `s3`).                                                                                    |
+| `cache-size-bytes`    | Total size in bytes of the cached path(s) at restore-time. Requires GNU `du` (Linux); empty on other platforms.                                 |
 
 ### Pipeline runtime metrics
 
@@ -687,7 +691,7 @@ Artifacts are scoped to repository, ref, originating run, name, and producer att
 Downloads select the newest published attempt for that exact name/run, so retried consumers retain successful earlier producers.
 This preview deliberately covers artifacts exchanged within a Build run. Producers always use their own run and ref.
 A duplicate upload for the same name and attempt fails.
-Build artifacts have one-day retention and require the matching bucket lifecycle rule.
+Build artifact downloads expire after one day; physical objects follow the existing cache bucket lifecycle.
 Expired artifacts are refused before download, independently of asynchronous S3 lifecycle deletion.
 Downloads are required: an absent artifact fails the step. Uploads support `if-no-files-found: error`, `warn` (default), or `ignore`.
 

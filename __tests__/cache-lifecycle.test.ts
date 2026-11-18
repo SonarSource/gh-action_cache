@@ -10,6 +10,8 @@ import { parse } from 'yaml';
 // in particular, combined actions intentionally expose no cache-matched-key output.
 const root = resolve(__dirname, '..');
 const action = parse(readFileSync(join(root, 'action.yml'), 'utf8'));
+// Frozen release: changes to this fixture require an intentional compatibility decision.
+const released = parse(readFileSync(join(__dirname, 'fixtures/action-v1.yml'), 'utf8'));
 type Outputs = Record<string, string>;
 interface Step {
   id?: string;
@@ -21,18 +23,18 @@ interface Step {
   with?: Record<string, string | boolean>;
 }
 
-function scenario(inputs: Outputs = {}, fixtures: Record<string, Outputs> = {}, ref = 'refs/pull/123/merge') {
+function scenario(inputs: Outputs = {}, fixtures: Record<string, Outputs> = {}, ref = 'refs/pull/123/merge', definition = action) {
   const values: Outputs = {
     'github.ref': ref,
     'steps.cache-backend.outputs.cache-backend': inputs.backend ?? 's3',
     'steps.cache-backend.outputs.import-github': inputs['import-github-cache'] ?? 'true',
   };
-  for (const [name, definition] of Object.entries(action.inputs) as [string, { default?: unknown }][]) {
-    values[`inputs.${name}`] = String(definition.default ?? '');
+  for (const [name, input] of Object.entries(definition.inputs) as [string, { default?: unknown }][]) {
+    values[`inputs.${name}`] = String(input.default ?? '');
   }
   for (const [name, value] of Object.entries(inputs)) values[`inputs.${name}`] = value;
   values['inputs.key'] = 'key';
-  const calls: { id: string; payload: boolean; with: Record<string, string> }[] = [];
+  const calls: { id: string; uses: string; payload: boolean; with: Record<string, string>; env: Outputs }[] = [];
   const executed: string[] = [];
   const directory = mkdtempSync(join(tmpdir(), 'cache-lifecycle-'));
 
@@ -50,7 +52,7 @@ function scenario(inputs: Outputs = {}, fixtures: Record<string, Outputs> = {}, 
   }
 
   try {
-    for (const step of action.runs.steps as Step[]) {
+    for (const step of definition.runs.steps as Step[]) {
       if (step.name === 'Resolve CI metrics gate') break;
       const id = step.id ?? step.name;
       if (id === 'cache-backend') continue;
@@ -60,10 +62,10 @@ function scenario(inputs: Outputs = {}, fixtures: Record<string, Outputs> = {}, 
       }
       executed.push(id);
       if (id === 'prepare-keys') {
-        setOutputs(id, { 'branch-key': 'pr/key', 'fallback-exact-key': 'refs/heads/master/key' });
+        setOutputs(id, { 'branch-key': 'pr/key', 'branch-restore-keys': 'pr/old-\nrefs/heads/master/key', 'fallback-exact-key': 'refs/heads/master/key' });
       } else if (step.uses) {
         const withValues = Object.fromEntries(Object.entries(step.with ?? {}).map(([k, v]) => [k, render(v)]));
-        calls.push({ id, with: withValues, payload: id !== 'aws-auth' && withValues['lookup-only'] !== 'true' });
+        calls.push({ id, uses: step.uses, env: Object.fromEntries(Object.entries(step.env ?? {}).map(([k, v]) => [k, render(v)])), with: withValues, payload: id !== 'aws-auth' && withValues['lookup-only'] !== 'true' });
         setOutputs(id, fixtures[id] ?? {});
       } else if (step.run) {
         const output = join(directory, id.replace(/[^a-z0-9-]/gi, '_'));
@@ -83,7 +85,9 @@ function scenario(inputs: Outputs = {}, fixtures: Record<string, Outputs> = {}, 
     }
     return {
       calls, executed,
-      outputs: Object.fromEntries(Object.entries(action.outputs).map(([name, output]) =>
+      metrics: Object.fromEntries(Object.entries((definition.runs.steps as Step[]).find(s => s.id === 'cache-metrics')!.with!).map(([k, v]) => [k, render(v)])),
+      guard: evaluate((definition.runs.steps as Step[]).find(s => s.name === 'Credential guard for S3 cache save')!.if!),
+      outputs: Object.fromEntries(Object.entries(definition.outputs).map(([name, output]) =>
         [name, render((output as { value: string }).value)])),
     };
   } finally {
@@ -92,7 +96,7 @@ function scenario(inputs: Outputs = {}, fixtures: Record<string, Outputs> = {}, 
 }
 
 const match = (key: string, hit = 'false') => ({ 'cache-matched-key': key, 'cache-hit': hit });
-const savers = (result: ReturnType<typeof scenario>) => result.calls.filter(c => c.id.endsWith('-save'));
+const savers = (result: ReturnType<typeof scenario>) => result.calls.filter(c => c.id.endsWith('-save') || c.id === 's3-cache' || c.id === 'github-cache');
 const payloads = (result: ReturnType<typeof scenario>) => result.calls.filter(c => c.payload);
 
 describe('explicit cache lifecycle', () => {
@@ -162,7 +166,7 @@ describe('selection, restoration and hit reporting', () => {
     });
     expect(payloads(result).map(c => c.id)).toEqual(['s3-restore']);
     expect(payloads(result)[0].with.key).toBe(key);
-    expect(payloads(result)[0].with['restore-keys']).toBeUndefined();
+    expect(payloads(result)[0].with['restore-keys']).toBe('');
     expect(result.outputs['cache-hit']).toBe('false');
     expect(result.outputs['cache-found']).toBe('true');
     expect(result.outputs['restore-key-hit']).toBe(key);
@@ -214,10 +218,65 @@ describe('selection, restoration and hit reporting', () => {
   });
 
   it('preserves a GitHub partial matched key with no combined-action output dependency', () => {
-    const result = scenario({ backend: 'github', save: 'true' }, { 'github-cache': match('old-key') });
-    expect(payloads(result).map(c => c.id)).toEqual(['github-cache']);
+    const result = scenario({ backend: 'github', save: 'true' }, { 'github-restore': match('old-key') });
+    expect(payloads(result).map(c => c.id)).toEqual(['github-restore']);
     expect(result.outputs['cache-hit']).toBe('false');
     expect(result.outputs['cache-matched-key']).toBe('old-key');
     expect(savers(result)).toHaveLength(1);
+  });
+});
+
+
+describe('rolling-v1 compatibility without new inputs', () => {
+  it('preserves every released public input and output expression', () => {
+    for (const [name, input] of Object.entries(released.inputs)) expect(action.inputs[name]).toEqual(input);
+    for (const [name, output] of Object.entries(released.outputs) as [string, { value: string }][]) {
+      expect(action.outputs[name].value).toBe(output.value);
+    }
+  });
+
+  const candidates: Record<string, Record<string, Outputs>> = {
+    miss: {},
+    'current exact': { 's3-probe': match('pr/key', 'true'), 's3-restore': match('pr/key', 'true'), 'github-cache': { 'cache-hit': 'true' } },
+    'fallback exact': { 's3-probe': match('refs/heads/master/key'), 's3-restore': match('refs/heads/master/key') },
+    partial: { 's3-probe': match('pr/old-key'), 's3-cache': { 'cache-hit': 'false' }, 's3-restore': match('pr/old-key'), 'github-cache': { 'cache-hit': 'false' } },
+    'migration hit': { 'github-import': match('key', 'true') },
+    'partial and migration hit': { 's3-probe': match('pr/old-key'), 's3-cache': { 'cache-hit': 'false' }, 's3-restore': match('pr/old-key'), 'github-import': match('key', 'true') },
+    'probe disappeared': { 's3-probe': match('pr/key', 'true') },
+  };
+  for (const backend of ['github', 's3']) {
+    for (const lookup of ['false', 'true']) {
+      for (const migration of ['false', 'true']) {
+        for (const ref of ['refs/pull/123/merge', 'refs/heads/gh-readonly-queue/master/pr-123']) {
+          it.each(Object.entries(candidates))(`${backend} lookup=${lookup} import=${migration} ref=${ref}: %s`, (_, fixtures) => {
+            const inputs = { backend, 'lookup-only': lookup, 'import-github-cache': migration };
+            const old = scenario(inputs, fixtures, ref, released);
+            const now = scenario(inputs, fixtures, ref);
+            // Same remote actions, ordering, complete inputs, scoped AWS environment and post-save registrations.
+            expect(now.calls).toEqual(old.calls);
+            for (const name of Object.keys(released.outputs)) expect(now.outputs[name]).toBe(old.outputs[name]);
+            const { 'save-enabled': saveEnabled, ...metrics } = now.metrics;
+            expect(saveEnabled).toBe('');
+            expect(metrics).toEqual(old.metrics);
+            expect(now.guard).toBe(old.guard);
+          });
+        }
+      }
+    }
+  }
+
+  it.each(['false', 'true'])('retains legacy required-miss enforcement when import lookup=%s', lookup => {
+    const inputs = { 'lookup-only': lookup, 'fail-on-cache-miss': 'true' };
+    expect(() => scenario(inputs, {}, undefined, released)).toThrow();
+    expect(() => scenario(inputs)).toThrow();
+  });
+
+  it('retains legacy fallback cache-hit and migration overlay semantics until explicitly opted in', () => {
+    const fallback = { 's3-probe': match('refs/heads/master/key'), 's3-restore': match('refs/heads/master/key') };
+    expect(scenario({}, fallback).outputs['cache-hit']).toBe('false');
+    expect(scenario({ save: 'false' }, fallback).outputs['cache-hit']).toBe('true');
+    const partial = { 's3-probe': match('pr/old-key'), 's3-cache': { 'cache-hit': 'false' }, 'github-import': match('key', 'true') };
+    expect(payloads(scenario({}, partial)).map(c => c.id)).toEqual(['s3-cache', 'github-import']);
+    expect(payloads(scenario({ save: 'false' }, partial)).map(c => c.id)).toEqual(['s3-restore']);
   });
 });

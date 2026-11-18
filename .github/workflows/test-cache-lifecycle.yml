@@ -6,6 +6,11 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      verify-failed-producer:
+        description: Run deliberately failing producer jobs and verify that neither backend publishes their cache
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,12 +26,10 @@ jobs:
       - uses: SonarSource/ci-github-actions/config-npm@v1
         with:
           disable-caching: true
-      - uses: step-security/mise-action@c7396e2a2a4ad1ea43abee3317d964292da354ae # v4.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          version: 2025.7.12
-          mise_toml: |
-            [tools]
-            node = "24"
+          node-version: '24'
+          package-manager-cache: false
       - run: npm ci
       - run: npm test
       - run: npx tsc --noEmit
@@ -68,7 +71,9 @@ jobs:
           mkdir -p ~/.cache/lifecycle-test
           echo producer-content > ~/.cache/lifecycle-test/content
 
+  # Opt-in because a genuine job failure is needed to exercise the backend's success-only post condition.
   failed-producer:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify-failed-producer
     continue-on-error: true
     strategy:
       fail-fast: false

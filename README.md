@@ -8,6 +8,8 @@ cache interface.
 - Supports all standard cache inputs and outputs
 - Automatic migration from GitHub Actions cache to S3 (no cold starts)
 
+For generated-build ownership controls and same-run artifacts, use the optional inputs below on this existing action.
+
 ## Requirements
 
 - `jq` (used by the cache key preparation script)
@@ -24,6 +26,60 @@ cache interface.
     key: cache-${{ runner.os }}-${{ hashFiles('**/requirements.txt', '**/pom.xml') }}
     restore-keys: cache-${{ runner.os }}-
 ```
+
+### Explicit producer and consumer lifecycles
+
+The existing root action opts into the new lifecycle only when `save` is explicitly `true` or `false`.
+Use it together with `lookup-only` to control ownership independently of downloading:
+
+| `lookup-only` | `save` | Behavior |
+| --- | --- | --- |
+| `false` | `false` | Restore only; never register a saver, including on a miss or partial match. |
+| `true` | `false` | Probe metadata only; never download or save. |
+| `true` | `true` | Probe metadata; on a miss/partial match, register a save after the job succeeds. |
+| `false` | `true` | Restore; on a miss/partial match, register a save after the job succeeds. |
+
+An exact primary-key hit skips saving. S3 also skips saving an exact logical primary key found in the configured fallback branch.
+S3 merge-queue refs never register a saver, even with `save: 'true'`.
+
+For example, a designated producer can avoid downloading dependencies that it only needs to populate on a miss:
+
+```yaml
+- uses: SonarSource/gh-action_cache@v1
+  id: dependencies
+  with:
+    path: node_modules
+    key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+    lookup-only: 'true'
+    save: 'true'
+- if: steps.dependencies.outputs.cache-hit != 'true'
+  run: npm ci
+```
+
+Consumers use the same path/key with `save: 'false'` and `fail-on-cache-miss: 'true'`. Callers remain responsible for producer job
+ordering, platform separation, input fingerprints, and excluding build outputs from reusable dependency caches.
+
+If `save` is omitted, the released execution path and existing outputs are preserved, including backend selection, combined cache
+actions, lookup-only behavior, physical fallback-hit values, GitHub migration restores, required misses and metrics inference.
+Following `@v1` alone does not enable the new lifecycle. GitHub may save even on lookup-only calls; S3 never saves on lookup-only
+calls. S3 saves also remain subject to its existing exact-hit and merge-queue guards. Specify both controls for new callers.
+
+With an explicit `save` input, `cache-hit` is `true` for an exact **logical** primary key, including S3 fallback-branch exact matches.
+Prefix/rolling matches return `false`, and misses return an empty value. `cache-matched-key` exposes the actual
+matched key, including its S3 branch prefix. `cache-found` distinguishes a usable partial match from a miss; `cache-restored` additionally
+requires payload restoration and is always `false` for lookup-only calls. These two new outputs are empty when `save` is omitted.
+
+With an explicit `save` input, the S3 metadata probe selects the backend before payload restoration.
+GitHub import runs only when that probe found no S3 candidate;
+it never overlays a usable S3 partial match. If a selected S3 entry disappears, a strict consumer fails rather than falling through to
+another payload. Post-save registration uses a metadata-only call and does not extract another archive. Disable `import-github-cache`
+after seeding to remove migration lookups. Restore-only consumers never seed S3, even when they restore a GitHub fallback.
+
+Explicit S3 producers use conditional first-writer-wins publication through the existing backend.
+Cache save failures remain warnings; artifact upload failures are fatal. The existing head-branch IAM scope and fallback order are reused.
+Explicit cache lifecycles additionally nest the canonical PR ref inside that scope to keep separate PRs isolated.
+The cache lookup algorithm stays with the existing action. Cache discovery still has the backend's
+existing prefix/listing semantics; artifact downloads use its opt-in exact-key policy.
 
 ### Input Environment Variables
 
@@ -48,6 +104,7 @@ cache interface.
 | `enableCrossOsArchive`       | Enable cross-OS cache compatibility                                                                                                              | No       | `false`                                                                                                  |
 | `fail-on-cache-miss`         | Fail workflow if cache entry not found                                                                                                           | No       | `false`                                                                                                  |
 | `lookup-only`                | Only check cache existence without downloading                                                                                                   | No       | `false`                                                                                                  |
+| `save`                       | Allow success-only post-job saving; combine with `lookup-only` for producer probes.                                                              | No       | Legacy backend-dependent behavior                                                                        |
 | `backend`                    | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |                                                                                                          |
 | `import-github-cache`        | Import GitHub cache to S3 when no S3 cache exists (migration mode, S3 backend only). Takes priority over `CACHE_IMPORT_GITHUB` env var.          | No       | `true` when backend is explicitly forced to `s3` or for public repos; `false` for private/internal repos |
 
@@ -144,13 +201,15 @@ gh variable set CACHE_IMPORT_GITHUB --body "true"
 
 ### Outputs
 
-| Output              | Description                                                                                                                                   |
-|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| `cache-hit`         | Boolean indicating an exact match for the primary key.                                                                                        |
-| `cache-matched-key` | The cache key for which a match was found — primary key on an exact hit, restore key on a partial hit, empty on a miss.                       |
-| `restore-key-hit`   | The restore key that was prefix-matched. Populated only when `cache-hit` is `false` AND a restore key matched (partial hit). Empty otherwise. |
-| `backend`           | The cache backend that was actually used (`github` or `s3`).                                                                                  |
-| `cache-size-bytes`  | Total size in bytes of the cached path(s) at restore-time. Requires GNU `du` (Linux); empty on other platforms.                               |
+| Output                | Description                                                                                                                                     |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cache-hit`           | Released backend hit value; explicit `save` includes exact logical S3 fallback matches.                                                         |
+| `cache-matched-key`   | Actual matched key, including the S3 branch prefix; empty on a miss.                                                                            |
+| `cache-found`         | With explicit `save`, whether a usable match was found; empty otherwise.                                                                        |
+| `cache-restored`      | With explicit `save`, whether a payload was restored; empty otherwise.                                                                          |
+| `restore-key-hit`     | The restore key that was prefix-matched. Populated only when `cache-hit` is `false` AND a restore key matched (partial hit). Empty otherwise.   |
+| `backend`             | The cache backend that was actually used (`github` or `s3`).                                                                                    |
+| `cache-size-bytes`    | Total size in bytes of the cached path(s) at restore-time. Requires GNU `du` (Linux); empty on other platforms.                                 |
 
 ### Pipeline runtime metrics
 
@@ -218,7 +277,7 @@ Field semantics:
 | `restore-key-hit`     | When `cache-hit` is `false` AND a prefix-matched restore key was found, the matched restore key. `null` otherwise (exact hit, no match, or lookup-only).                                                                                        |
 | `size-bytes-restored` | Size of the cache content at restore-time. `0` on a full miss with no partial hit.                                                                                                                                                              |
 | `size-bytes-at-end`   | Size of the path at job end (measured in the post step, before the cache save runs). Reflects what *would* be saved when `saved` is true. When `saved` is false, this value still reports the path size at end-of-job but nothing is persisted. |
-| `saved`               | `true` if the cache action actually persists the cache. `false` when `cache-hit` was true (cache action skips save on exact match) or when `lookup-only` was set.                                                                               |
+| `saved`               | Whether a save is scheduled for a successful job. Recorded before upload; does not confirm job or upload success.                                                                                                                               |
 
 The metrics step fails open — if measurement fails for any reason, the cache flow continues unaffected.
 
@@ -588,3 +647,51 @@ After the PR is merged to `master`:
 2. Delete the `symlink-keeper-x.y.z` branch (the tag replaces it).
 
 The tag is what callers pin to in production.
+
+## Same-run artifacts (preview)
+
+Set `operation: upload` or `operation: download` on the existing root action. The default operation is `cache`.
+These artifact operations reuse the S3 backend and the current production bucket, branch namespace and OIDC/Cognito credentials.
+They never invoke GitHub cache or artifact actions. For generated-build caches, set `import-github-cache: 'false'`
+and use the explicit `save` controls above.
+
+The upload `key` is a logical name. Uploads return an `artifact-key` containing the workflow run and producer attempt.
+Expose it as a job output and pass it to the consumer, so a consumer-only retry uses the successful original producer.
+
+```yaml
+jobs:
+  produce:
+    outputs:
+      artifact: ${{ steps.upload.outputs.artifact-key }}
+    steps:
+      # Checkout and build first.
+      - uses: SonarSource/gh-action_cache@<commit>
+        id: upload
+        with:
+          operation: upload
+          key: build-output
+          path: '**/target/'
+          if-no-files-found: error
+  consume:
+    needs: produce
+    steps:
+      - uses: SonarSource/gh-action_cache@<commit>
+        with:
+          operation: download
+          key: ${{ needs.produce.outputs.artifact }}
+          path: .
+```
+
+Artifact downloads are required and exact: absent objects fail without prefix or branch fallback.
+Duplicate uploads of the same name in one producer attempt fail an atomic conditional write.
+The internal adapter only packages paths relative to their common root, checks identity/size/SHA-256/one-day availability,
+and extracts at the requested destination. It preserves executable bits and symlinks, honors glob exclusions,
+and excludes hidden upload files. The existing backend handles compression, multipart upload and concurrent download.
+A fixed staging path, cross-OS cache version and gzip allow Linux, Windows and minimal containers to exchange the same archive.
+
+Availability expires after one day and is checked after restore, before extraction. Physical objects follow the existing
+30-day cache bucket lifecycle. This preview needs no infrastructure deployment. Cross-run discovery, artifact UI integration,
+and automatic PR-close cleanup are outside this interface.
+
+The artifact path currently pins a draft of the existing backend with four opt-in policies: immutable writes,
+failed-save errors, exact-key lookup and portable gzip. Ordinary cache calls retain their released backend pin and behavior.

@@ -19,9 +19,12 @@ inputs:
     description: Which backend was used (`github` or `s3`)
     required: true
   lookup-only:
-    description: Whether the caller requested lookup-only (no restore, no save)
+    description: Whether the caller requested lookup-only (no payload restore)
     required: false
     default: 'false'
+  save-enabled:
+    description: Whether a success-only post-job saver was registered. Empty retains legacy inference from mode and hit inputs.
+    default: ''
   step-id:
     description: Unique discriminator for the per-invocation JSON filename (typically `github.action` of the caller)
     required: true

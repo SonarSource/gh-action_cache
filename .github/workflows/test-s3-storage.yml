@@ -1,0 +1,103 @@
+---
+name: Test S3 artifact handoffs
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  produce-linux:
+    runs-on: sonar-xs
+    outputs:
+      artifact: ${{ steps.upload.outputs.artifact-key }}
+    steps:
+      - &checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - &fixture
+        shell: bash
+        run: |
+          mkdir -p fixture/@scope
+          echo 'one successful producer' > fixture/@scope/result
+      - &upload
+        id: upload
+        uses: ./
+        with:
+          operation: upload
+          key: fixture-${{ runner.os }}
+          path: fixture/
+          if-no-files-found: error
+      - name: Duplicate publication must fail
+        id: duplicate
+        continue-on-error: true
+        uses: ./
+        with:
+          operation: upload
+          key: fixture-${{ runner.os }}
+          path: fixture/
+      - shell: bash
+        env:
+          OUTCOME: ${{ steps.duplicate.outcome }}
+        run: test "$OUTCOME" = failure
+  produce-windows:
+    runs-on: github-windows-latest-s
+    outputs:
+      artifact: ${{ steps.upload.outputs.artifact-key }}
+    steps:
+      - *checkout
+      - *fixture
+      - *upload
+  consume-container:
+    needs: produce-linux
+    runs-on: sonar-m-docker
+    container:
+      image: ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
+    steps:
+      - name: Install bootstrap tools
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y ca-certificates curl jq
+      - *checkout
+      - name: Restore artifact inside a job container
+        uses: ./
+        with:
+          operation: download
+          key: ${{ needs.produce-linux.outputs.artifact }}
+          path: result
+      - run: test "$(cat result/@scope/result)" = 'one successful producer'
+  consume:
+    needs: [produce-linux, produce-windows]
+    strategy:
+      matrix:
+        runner: [sonar-xs, github-windows-latest-s]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - *checkout
+      - name: Restore Linux artifact
+        uses: ./
+        with:
+          operation: download
+          key: ${{ needs.produce-linux.outputs.artifact }}
+          path: linux-result
+      - name: Restore Windows artifact
+        uses: ./
+        with:
+          operation: download
+          key: ${{ needs.produce-windows.outputs.artifact }}
+          path: windows-result
+      - shell: bash
+        run: |
+          test "$(cat linux-result/@scope/result)" = 'one successful producer'
+          test "$(cat windows-result/@scope/result)" = 'one successful producer'
+      - name: Missing artifact must fail
+        id: missing
+        continue-on-error: true
+        uses: ./
+        with:
+          operation: download
+          key: artifacts/${{ github.run_id }}/1/missing/
+          path: missing-result
+      - shell: bash
+        env:
+          OUTCOME: ${{ steps.missing.outcome }}
+        run: test "$OUTCOME" = failure

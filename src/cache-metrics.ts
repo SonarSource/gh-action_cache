@@ -10,6 +10,7 @@ export interface CacheMetricsInputs {
   matchedKey: string;
   backend: string;
   lookupOnly: boolean;
+  saveEnabled: string;
   stepId: string;
   metricsDir: string;
   mode: string;
@@ -34,8 +35,8 @@ export interface CacheMetricsRecord {
    */
   size_bytes_at_end: number | null;
   /**
-   * Whether the cache action actually persists the cache at job end. False when `cache_hit` was true (exact match: cache action skips save),
-   * when `lookup-only` was set, or when the S3 decision mode was `restore-only`/`lookup` (a save-incapable step ran).
+   * Whether a save is scheduled for a successful job. This is recorded before the uploader runs, so it does not confirm upload success.
+   * Explicit save-enabled accounts for probe-save producers and restore-only consumers; legacy callers use hit/lookup/mode inference.
    */
   saved: boolean | null;
   timestamp_restored: string | null;
@@ -137,6 +138,7 @@ export function readInputs(): CacheMetricsInputs {
     matchedKey: core.getInput('matched-key'),
     backend: core.getInput('backend', { required: true }),
     lookupOnly: core.getInput('lookup-only').toLowerCase() === 'true',
+    saveEnabled: core.getInput('save-enabled'),
     stepId: core.getInput('step-id', { required: true }),
     // Output dir is provided by the runner (ARC pod template / WarpBuild AMI)
     // via the CI_METRICS_DIR env var. Default keeps the action usable on any

@@ -481,6 +481,7 @@ jobs:
         with:
           path: ~/.cache/pip
           key: skip-save-verify-${{ runner.os }}
+          save: 'true' # Opt into logical fallback-hit reporting.
           fail-on-cache-miss: false
           environment: dev
           backend: s3
@@ -490,11 +491,12 @@ jobs:
           expected_fallback_key="refs/heads/master/skip-save-verify-${{ runner.os }}"
           matched_key="${{ steps.cache-skip-save.outputs.cache-matched-key }}"
 
-          if [[ "${{ steps.cache-skip-save.outputs.cache-hit }}" == "true" || "$matched_key" != "$expected_fallback_key" ]]; then
+          if [[ "$matched_key" != "$expected_fallback_key" ]]; then
             echo "::notice::No exact fallback-branch match yet (matched-key='$matched_key', expected='$expected_fallback_key') — self-heals once master has saved this key. Skipping assertion."
             exit 0
           fi
 
+          [[ "${{ steps.cache-skip-save.outputs.cache-hit }}" == "true" ]] || { echo "ERROR: exact logical fallback must be a hit"; exit 1; }
           shopt -s nullglob
           files=(/tmp/ci-metrics/cache-*.json)
           if (( ${#files[@]} == 0 )); then

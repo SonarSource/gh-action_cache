@@ -113,8 +113,8 @@ describe('metricsFilePath / read / write', () => {
 
   it('composes the filename from dir + pre-slugified step id', () => {
     // The caller is expected to slugify; metricsFilePath itself just composes.
-    expect(metricsFilePath('/x/m', 'cache-python')).toBe('/x/m/cache-cache-python.json');
-    expect(metricsFilePath('/x/m', slugifyStepId('!!!'))).toBe('/x/m/cache-cache.json');
+    expect(metricsFilePath('/x/m', 'cache-python')).toBe(path.join('/x/m', 'cache-cache-python.json'));
+    expect(metricsFilePath('/x/m', slugifyStepId('!!!'))).toBe(path.join('/x/m', 'cache-cache.json'));
   });
 
   it('writeMetricsFile creates the parent directory', () => {
@@ -415,6 +415,24 @@ describe('cache-metrics-post', () => {
 
     const updated = JSON.parse(fs.readFileSync(metricsFile, 'utf-8'));
     expect(updated.saved).toBe(false);
+  });
+
+  it.each([
+    { saveEnabled: 'false', lookupOnly: 'false', cacheHit: 'false', expected: false },
+    { saveEnabled: 'true', lookupOnly: 'true', cacheHit: 'false', expected: true },
+    { saveEnabled: 'true', lookupOnly: 'false', cacheHit: 'true', expected: true },
+  ])('uses explicit save registration: $saveEnabled (lookup=$lookupOnly hit=$cacheHit)', async (testCase) => {
+    const metricsFile = path.join(tmp, 'cache-explicit.json');
+    const state: Record<string, string> = {
+      metricsFile, path: '',
+      saveEnabled: testCase.saveEnabled,
+      lookupOnly: testCase.lookupOnly,
+      cacheHit: testCase.cacheHit,
+    };
+    vi.mocked(core.getState).mockImplementation(name => state[name] ?? '');
+    const { run } = await import('../src/cache-metrics-post');
+    await run();
+    expect(readMetricsFile(metricsFile).saved).toBe(testCase.expected);
   });
 
   it('skips when no state was saved (main step did not run)', async () => {

@@ -2,6 +2,7 @@
 self-hosted-runner:
   labels:
     - sonar-xs
+    - sonar-m-docker
     - github-ubuntu-latest-s
     - github-windows-latest-s
     - warp-custom-ubuntu-24-04

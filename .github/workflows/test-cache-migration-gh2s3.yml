@@ -190,7 +190,7 @@ jobs:
     steps:
       - uses: step-security/mise-action@c7396e2a2a4ad1ea43abee3317d964292da354ae # v4.0.1
         with:
-          version: 2025.7.12
+          version: 2026.11.8
           mise_toml: |
             [tools]
             python = "3.13.5"

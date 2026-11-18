@@ -22,6 +22,12 @@ inputs:
   lookup-only:
     description: Check if a cache entry exists for the given input(s) (key, restore-keys) without downloading the cache
     default: false
+  save:
+    description: >
+      Allow a success-only post-job save (true or false). Set false for restore-only consumers.
+      With lookup-only, true registers a save without downloading. When omitted, preserves legacy behavior:
+      GitHub may save; S3 saves only when lookup-only is false. S3 merge-queue refs never save.
+    default: ''
   environment:
     description: Environment to use ('dev' or 'prod', 's3' backend only).
     default: prod
@@ -47,12 +53,18 @@ inputs:
 
 outputs:
   cache-hit:
-    description: A boolean value to indicate an exact match was found for the primary key
+    description: Whether the logical primary key matched exactly, including the configured S3 fallback branch (empty on a miss).
     value: ${{ steps.cache-outputs.outputs.cache-hit }}
+  cache-found:
+    description: Whether a usable cache was found, including partial matches and lookup-only probes.
+    value: ${{ steps.cache-outputs.outputs.cache-found }}
+  cache-restored:
+    description: Whether a payload was restored by this invocation (always false for lookup-only).
+    value: ${{ steps.cache-outputs.outputs.cache-restored }}
   cache-matched-key:
     description: >
-      The cache key for which a match was found. Equals the primary key on an exact hit, one of the user-provided restore keys on a partial
-      hit, or empty when no match was found.
+      The actual matched key, including its S3 branch prefix. Empty on a miss. An exact logical hit from the fallback branch
+      can have a different physical key from the current branch primary key.
     value: ${{ steps.cache-outputs.outputs.matched-key }}
   restore-key-hit:
     description: >
@@ -138,18 +150,42 @@ runs:
         } >> "$GITHUB_OUTPUT"
         echo "ACTION_PATH_CACHE=${{ github.action_path }}" >> "$GITHUB_ENV"
 
-    - name: Cache with GitHub Actions (public repos)
+    - name: Resolve cache lifecycle
+      id: lifecycle
+      shell: bash
+      env:
+        CACHE_BACKEND: ${{ steps.cache-backend.outputs.cache-backend }}
+        LOOKUP_ONLY: ${{ inputs.lookup-only }}
+        SAVE: ${{ inputs.save }}
+        CACHE_REF: ${{ github.ref }}
+      run: bash "$ACTION_PATH_CACHE/scripts/resolve-lifecycle.sh"
+
+    - name: Restore or probe GitHub cache
       if: steps.cache-backend.outputs.cache-backend == 'github'
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       id: github-cache
       with:
         path: ${{ inputs.path }}
         key: ${{ inputs.key }}
         restore-keys: ${{ inputs.restore-keys }}
-        upload-chunk-size: ${{ inputs.upload-chunk-size }}
         enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         lookup-only: ${{ inputs.lookup-only }}
+
+    # The combined action is only a post-save registrar here. Its main step probes metadata, never extracts a second payload.
+    - name: Register GitHub cache save
+      if: >-
+        steps.cache-backend.outputs.cache-backend == 'github' &&
+        steps.lifecycle.outputs.save-enabled == 'true' &&
+        steps.github-cache.outputs.cache-hit != 'true'
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      id: github-save
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        upload-chunk-size: ${{ inputs.upload-chunk-size }}
+        enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
+        lookup-only: true
 
     - name: Setup S3 cache credentials
       if: steps.cache-backend.outputs.cache-backend == 's3'
@@ -192,48 +228,11 @@ runs:
         fail-on-cache-miss: false
         lookup-only: true
 
-    - name: Decide S3 cache mode
-      if: steps.cache-backend.outputs.cache-backend == 's3'
-      id: s3-decide
-      shell: bash
-      env:
-        LOOKUP_ONLY: ${{ inputs.lookup-only }}
-        PROBE_HIT: ${{ steps.s3-probe.outputs.cache-hit }}
-        PROBE_MATCHED_KEY: ${{ steps.s3-probe.outputs.cache-matched-key }}
-        FALLBACK_EXACT_KEY: ${{ steps.prepare-keys.outputs.fallback-exact-key }}
-        CACHE_REF: ${{ github.ref }}
-      run: |
-        echo "::group::Decide S3 cache mode"
-        if [[ "$LOOKUP_ONLY" == "true" ]]; then
-          MODE="lookup"
-          REASON="lookup-only input set — no restore, no save"
-        elif [[ "$CACHE_REF" == refs/heads/gh-readonly-queue/* ]]; then
-          # Merge queue refs are not writable: the Cognito role denies s3:PutObject (and
-          # s3:ListBucket) on that prefix. The save post-step can sit until the job timeout
-          # after AccessDenied, so never select the combined (save-capable) action here.
-          # Restore still runs and can hit the default-branch fallback key.
-          MODE="restore-only"
-          REASON="merge queue ref '$CACHE_REF' cannot be saved — restore without a save post-step"
-          # Distinct from other restore-only paths so a miss can still import from the GitHub
-          # cache and enforce fail-on-cache-miss. Those steps must not run for a fallback-exact
-          # restore-only, which already has the bytes.
-          echo "readonly-ref=true" >> "$GITHUB_OUTPUT"
-        elif [[ "$PROBE_HIT" == "true" ]]; then
-          MODE="restore-only"
-          REASON="branch-scoped key already holds exact content — restore without redundant save"
-        elif [[ -n "$PROBE_MATCHED_KEY" && -n "$FALLBACK_EXACT_KEY" && "$PROBE_MATCHED_KEY" == "$FALLBACK_EXACT_KEY" ]]; then
-          MODE="restore-only"
-          REASON="content matched the default-branch fallback-exact key — identical to default branch, skip duplicate save"
-        else
-          MODE="combined"
-          REASON="no usable S3 match (or a non-fallback partial match) — restore and save back under the branch-scoped key"
-        fi
-        echo "mode=$MODE (ref='$CACHE_REF', matched-key='$PROBE_MATCHED_KEY', fallback-exact-key='$FALLBACK_EXACT_KEY'): $REASON"
-        echo "mode=$MODE" >> "$GITHUB_OUTPUT"
-        echo "::endgroup::"
-
     - name: Restore from S3 (no save)
-      if: steps.cache-backend.outputs.cache-backend == 's3' && steps.s3-decide.outputs.mode == 'restore-only'
+      if: >-
+        steps.cache-backend.outputs.cache-backend == 's3' &&
+        inputs.lookup-only != 'true' &&
+        steps.s3-probe.outputs.cache-matched-key != ''
       uses: step-security/runs-on-cache/restore@e61ed9b0206c630e9a6bb5f12ca4cd78ae7bbe93 # v5.0.8
       id: s3-restore
       env:
@@ -247,15 +246,58 @@ runs:
         AWS_DEFAULT_PROFILE: ''
       with:
         path: ${{ inputs.path }}
-        key: ${{ steps.prepare-keys.outputs.branch-key }}
-        restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
+        key: ${{ steps.s3-probe.outputs.cache-matched-key }}
         enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
-        fail-on-cache-miss: ${{ steps.cache-backend.outputs.import-github == 'true' && 'false' || inputs.fail-on-cache-miss }}
+        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
 
-    - name: Cache on S3
-      if: steps.cache-backend.outputs.cache-backend == 's3' && steps.s3-decide.outputs.mode == 'combined'
+    - name: Import GitHub cache to S3 (migration fallback)
+      if: >-
+        steps.cache-backend.outputs.cache-backend == 's3' &&
+        steps.cache-backend.outputs.import-github == 'true' &&
+        steps.s3-probe.outputs.cache-matched-key == ''
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      id: github-import
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}
+        lookup-only: ${{ inputs.lookup-only }}
+        fail-on-cache-miss: false
+
+    - name: Resolve cache outputs
+      id: cache-outputs
+      shell: bash
+      env:
+        CACHE_BACKEND: ${{ steps.cache-backend.outputs.cache-backend }}
+        LOOKUP_ONLY: ${{ inputs.lookup-only }}
+        BRANCH_KEY: ${{ steps.prepare-keys.outputs.branch-key }}
+        FALLBACK_EXACT_KEY: ${{ steps.prepare-keys.outputs.fallback-exact-key }}
+        MATCHED_GITHUB: ${{ steps.github-cache.outputs.cache-matched-key }}
+        HIT_GITHUB: ${{ steps.github-cache.outputs.cache-hit }}
+        MATCHED_S3_PROBE: ${{ steps.s3-probe.outputs.cache-matched-key }}
+        MATCHED_S3_RESTORE: ${{ steps.s3-restore.outputs.cache-matched-key }}
+        MATCHED_IMPORT: ${{ steps.github-import.outputs.cache-matched-key }}
+        HIT_IMPORT: ${{ steps.github-import.outputs.cache-hit }}
+      run: bash "$ACTION_PATH_CACHE/scripts/cache-outputs.sh"
+
+    - name: Enforce fail-on-cache-miss
+      if: inputs.fail-on-cache-miss == 'true' && steps.cache-outputs.outputs.cache-found != 'true'
+      shell: bash
+      env:
+        CACHE_KEY: ${{ inputs.key }}
+      run: |
+        echo "::error::Cache miss: no usable cache found for key '${CACHE_KEY}'"
+        exit 1
+
+    - name: Register S3 cache save
+      if: >-
+        steps.cache-backend.outputs.cache-backend == 's3' &&
+        steps.lifecycle.outputs.save-enabled == 'true' &&
+        steps.s3-probe.outputs.cache-matched-key != steps.prepare-keys.outputs.branch-key &&
+        (steps.prepare-keys.outputs.fallback-exact-key == '' ||
+         steps.s3-probe.outputs.cache-matched-key != steps.prepare-keys.outputs.fallback-exact-key)
       uses: step-security/runs-on-cache@e61ed9b0206c630e9a6bb5f12ca4cd78ae7bbe93 # v5.0.8
-      id: s3-cache
+      id: s3-save
       env:
         RUNS_ON_S3_BUCKET_CACHE: sonarsource-s3-cache-${{ inputs.environment }}-bucket
         AWS_DEFAULT_REGION: eu-central-1
@@ -270,84 +312,10 @@ runs:
       with:
         path: ${{ inputs.path }}
         key: ${{ steps.prepare-keys.outputs.branch-key }}
-        restore-keys: ${{ steps.prepare-keys.outputs.branch-restore-keys }}
         upload-chunk-size: ${{ inputs.upload-chunk-size }}
         enableCrossOsArchive: ${{ inputs.enableCrossOsArchive }}
-        # When import mode is active, suppress fail-on-cache-miss here: a subsequent step handles it after also attempting the GitHub cache
-        # fallback.
-        fail-on-cache-miss: ${{ steps.cache-backend.outputs.import-github == 'true' && 'false' || inputs.fail-on-cache-miss }}
-        lookup-only: ${{ inputs.lookup-only }}
-
-    - name: Import GitHub cache to S3 (migration fallback)
-      if: >-
-        steps.cache-backend.outputs.cache-backend == 's3' &&
-        steps.s3-probe.outputs.cache-hit != 'true' &&
-        steps.cache-backend.outputs.import-github == 'true' &&
-        (
-          (
-            (steps.s3-decide.outputs.mode == 'combined' || steps.s3-decide.outputs.mode == 'lookup') &&
-            steps.s3-cache.outputs.cache-hit != 'true'
-          ) ||
-          (
-            steps.s3-decide.outputs.readonly-ref == 'true' &&
-            steps.s3-restore.outputs.cache-matched-key == ''
-          )
-        )
-      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-      id: github-import
-      with:
-        path: ${{ inputs.path }}
-        key: ${{ inputs.key }}
-        restore-keys: ${{ inputs.restore-keys }}
-        lookup-only: ${{ inputs.lookup-only }}
         fail-on-cache-miss: false
-
-    - name: Enforce fail-on-cache-miss after GitHub import fallback
-      if: >-
-        steps.cache-backend.outputs.cache-backend == 's3' &&
-        steps.cache-backend.outputs.import-github == 'true' &&
-        inputs.fail-on-cache-miss == 'true' &&
-        steps.s3-probe.outputs.cache-hit != 'true' &&
-        steps.github-import.outputs.cache-matched-key == '' &&
-        (
-          (
-            (steps.s3-decide.outputs.mode == 'combined' || steps.s3-decide.outputs.mode == 'lookup') &&
-            steps.s3-cache.outputs.cache-hit != 'true'
-          ) ||
-          (
-            steps.s3-decide.outputs.readonly-ref == 'true' &&
-            steps.s3-restore.outputs.cache-matched-key == ''
-          )
-        )
-      shell: bash
-      env:
-        CACHE_KEY: ${{ inputs.key }}
-      run: |
-        echo "::error::Cache miss: no cache found in S3 or GitHub for key '${CACHE_KEY}'"
-        exit 1
-
-    # Aggregate `cache-hit` and `cache-matched-key` across the three possible restore steps once, so every consumer (the top-level outputs
-    # and the cache-metrics sub-action) reads from a single source instead of repeating the triple-OR. Adding a fourth backend would only
-    # touch this step.
-    - name: Aggregate cache outputs across backends
-      id: cache-outputs
-      shell: bash
-      env:
-        HIT_GITHUB: ${{ steps.github-cache.outputs.cache-hit }}
-        HIT_S3: ${{ steps.s3-cache.outputs.cache-hit }}
-        HIT_S3_RESTORE: ${{ steps.s3-restore.outputs.cache-hit }}
-        HIT_S3_PROBE: ${{ steps.s3-probe.outputs.cache-hit }}
-        HIT_IMPORT: ${{ steps.github-import.outputs.cache-hit }}
-        MATCHED_GITHUB: ${{ steps.github-cache.outputs.cache-matched-key }}
-        MATCHED_S3: ${{ steps.s3-cache.outputs.cache-matched-key }}
-        MATCHED_S3_RESTORE: ${{ steps.s3-restore.outputs.cache-matched-key }}
-        MATCHED_S3_PROBE: ${{ steps.s3-probe.outputs.cache-matched-key }}
-        MATCHED_IMPORT: ${{ steps.github-import.outputs.cache-matched-key }}
-      run: |
-        CACHE_HIT="${HIT_GITHUB:-${HIT_S3:-${HIT_S3_RESTORE:-${HIT_S3_PROBE:-${HIT_IMPORT:-}}}}}"
-        MATCHED_KEY="${MATCHED_GITHUB:-${MATCHED_S3:-${MATCHED_S3_RESTORE:-${MATCHED_S3_PROBE:-${MATCHED_IMPORT:-}}}}}"
-        echo "cache-hit=${CACHE_HIT}" >> "$GITHUB_OUTPUT"
-        echo "matched-key=${MATCHED_KEY}" >> "$GITHUB_OUTPUT"
+        lookup-only: true
 
     - name: Resolve CI metrics gate
       id: ci-metrics-gate
@@ -417,10 +385,10 @@ runs:
         backend: ${{ steps.cache-backend.outputs.cache-backend }}
         lookup-only: ${{ inputs.lookup-only }}
         step-id: ${{ github.action }}
-        mode: ${{ steps.s3-decide.outputs.mode }}
+        save-enabled: ${{ steps.github-save.outcome == 'success' || steps.s3-save.outcome == 'success' }}
 
     - name: Credential guard for S3 cache save
-      if: steps.cache-backend.outputs.cache-backend == 's3'
+      if: steps.s3-save.outcome == 'success'
       uses: SonarSource/gh-action_cache/credential-guard@v1
       with:
         credentials-file: ${{ steps.aws-auth.outputs.credentials-file }}

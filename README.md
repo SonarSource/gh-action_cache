@@ -25,6 +25,55 @@ cache interface.
     restore-keys: cache-${{ runner.os }}-
 ```
 
+### Explicit producer and consumer lifecycles
+
+Use `save` together with `lookup-only` to control ownership independently of downloading:
+
+| `lookup-only` | `save` | Behavior |
+| --- | --- | --- |
+| `false` | `false` | Restore only; never register a saver, including on a miss or partial match. |
+| `true` | `false` | Probe metadata only; never download or save. |
+| `true` | `true` | Probe metadata; on a miss/partial match, register a save after the job succeeds. |
+| `false` | `true` | Restore; on a miss/partial match, register a save after the job succeeds. |
+
+An exact primary-key hit skips saving. S3 also skips saving an exact logical primary key found in the configured fallback branch.
+S3 merge-queue refs never register a saver, even with `save: 'true'`.
+
+For example, a designated producer can avoid downloading dependencies that it only needs to populate on a miss:
+
+```yaml
+- uses: SonarSource/gh-action_cache@v1
+  id: dependencies
+  with:
+    path: node_modules
+    key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+    lookup-only: 'true'
+    save: 'true'
+- if: steps.dependencies.outputs.cache-hit != 'true'
+  run: npm ci
+```
+
+Consumers use the same path/key with `save: 'false'` and `fail-on-cache-miss: 'true'`. Callers remain responsible for producer job
+ordering, platform separation, input fingerprints, and excluding build outputs from reusable dependency caches.
+
+If `save` is omitted, historical defaults are retained: GitHub registers success-only saves even for lookup-only calls; S3 does so only
+when `lookup-only` is false. Specify both controls for new callers.
+
+`cache-hit` is `true` for an exact **logical** primary key, including S3 fallback-branch exact matches. This corrects the earlier physical
+branch-prefix comparison. Prefix/rolling matches return `false`, and misses return an empty value. `cache-matched-key` exposes the actual
+matched key, including its S3 branch prefix. `cache-found` distinguishes a usable partial match from a miss; `cache-restored` additionally
+requires payload restoration and is always `false` for lookup-only calls.
+
+The S3 metadata probe selects the backend before payload restoration. GitHub import runs only when that probe found no S3 candidate;
+it never overlays a usable S3 partial match. If a selected S3 entry disappears, a strict consumer fails rather than falling through to
+another payload. Post-save registration uses a metadata-only call and does not extract another archive. Disable `import-github-cache`
+after seeding to remove migration lookups. Restore-only consumers never seed S3, even when they restore a GitHub fallback.
+
+These lifecycle controls do not change the existing branch namespace/IAM mapping, fallback order, or backend listing/upload algorithm.
+In particular, this change does not add conditional first-writer-wins S3 publication or fix exact-object selection/pagination in the
+underlying backend. Those require separate backend/infrastructure validation before claiming full GitHub-cache policy equivalence.
+Run-local artifact transport, producer-attempt identity and artifact retention are separate concerns.
+
 ### Input Environment Variables
 
 | Environment Variable  | Description                                                                                                                                                                   |
@@ -48,6 +97,7 @@ cache interface.
 | `enableCrossOsArchive`       | Enable cross-OS cache compatibility                                                                                                              | No       | `false`                                                                                                  |
 | `fail-on-cache-miss`         | Fail workflow if cache entry not found                                                                                                           | No       | `false`                                                                                                  |
 | `lookup-only`                | Only check cache existence without downloading                                                                                                   | No       | `false`                                                                                                  |
+| `save`                       | Allow success-only post-job saving; combine with `lookup-only` for producer probes.                                                              | No       | Legacy backend-dependent behavior                                                                        |
 | `backend`                    | Force specific backend: `github` or `s3`. Takes priority over `CACHE_BACKEND` env var and auto-detection.                                        | No       |                                                                                                          |
 | `import-github-cache`        | Import GitHub cache to S3 when no S3 cache exists (migration mode, S3 backend only). Takes priority over `CACHE_IMPORT_GITHUB` env var.          | No       | `true` when backend is explicitly forced to `s3` or for public repos; `false` for private/internal repos |
 
@@ -146,8 +196,10 @@ gh variable set CACHE_IMPORT_GITHUB --body "true"
 
 | Output              | Description                                                                                                                                   |
 |---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| `cache-hit`         | Boolean indicating an exact match for the primary key.                                                                                        |
-| `cache-matched-key` | The cache key for which a match was found — primary key on an exact hit, restore key on a partial hit, empty on a miss.                       |
+| `cache-hit`         | Boolean indicating an exact logical match for the primary key, including S3 fallback-branch exact matches.                                    |
+| `cache-matched-key` | Actual matched key, including the S3 branch prefix; empty on a miss.                                                                          |
+| `cache-found`       | Whether a usable match was found (including partial matches and metadata probes).                                                             |
+| `cache-restored`    | Whether a payload was restored; always false for lookup-only.                                                                                 |
 | `restore-key-hit`   | The restore key that was prefix-matched. Populated only when `cache-hit` is `false` AND a restore key matched (partial hit). Empty otherwise. |
 | `backend`           | The cache backend that was actually used (`github` or `s3`).                                                                                  |
 | `cache-size-bytes`  | Total size in bytes of the cached path(s) at restore-time. Requires GNU `du` (Linux); empty on other platforms.                               |
@@ -218,7 +270,7 @@ Field semantics:
 | `restore-key-hit`     | When `cache-hit` is `false` AND a prefix-matched restore key was found, the matched restore key. `null` otherwise (exact hit, no match, or lookup-only).                                                                                        |
 | `size-bytes-restored` | Size of the cache content at restore-time. `0` on a full miss with no partial hit.                                                                                                                                                              |
 | `size-bytes-at-end`   | Size of the path at job end (measured in the post step, before the cache save runs). Reflects what *would* be saved when `saved` is true. When `saved` is false, this value still reports the path size at end-of-job but nothing is persisted. |
-| `saved`               | `true` if the cache action actually persists the cache. `false` when `cache-hit` was true (cache action skips save on exact match) or when `lookup-only` was set.                                                                               |
+| `saved`               | Whether a save is scheduled for a successful job. Recorded before upload; does not confirm job or upload success.                                                                                                                               |
 
 The metrics step fails open — if measurement fails for any reason, the cache flow continues unaffected.
 

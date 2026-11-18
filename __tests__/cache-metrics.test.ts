@@ -417,6 +417,24 @@ describe('cache-metrics-post', () => {
     expect(updated.saved).toBe(false);
   });
 
+  it.each([
+    { saveEnabled: 'false', lookupOnly: 'false', cacheHit: 'false', expected: false },
+    { saveEnabled: 'true', lookupOnly: 'true', cacheHit: 'false', expected: true },
+    { saveEnabled: 'true', lookupOnly: 'false', cacheHit: 'true', expected: true },
+  ])('uses explicit save registration: $saveEnabled (lookup=$lookupOnly hit=$cacheHit)', async (testCase) => {
+    const metricsFile = path.join(tmp, 'cache-explicit.json');
+    const state: Record<string, string> = {
+      metricsFile, path: '',
+      saveEnabled: testCase.saveEnabled,
+      lookupOnly: testCase.lookupOnly,
+      cacheHit: testCase.cacheHit,
+    };
+    vi.mocked(core.getState).mockImplementation(name => state[name] ?? '');
+    const { run } = await import('../src/cache-metrics-post');
+    await run();
+    expect(readMetricsFile(metricsFile).saved).toBe(testCase.expected);
+  });
+
   it('skips when no state was saved (main step did not run)', async () => {
     vi.mocked(core.getState).mockReturnValue('');
 

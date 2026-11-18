@@ -1,0 +1,212 @@
+---
+name: Test cache lifecycles
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: sonar-xs
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: SonarSource/ci-github-actions/config-npm@v1
+        with:
+          disable-caching: true
+      - uses: step-security/mise-action@c7396e2a2a4ad1ea43abee3317d964292da354ae # v4.0.1
+        with:
+          version: 2025.7.12
+          mise_toml: |
+            [tools]
+            node = "24"
+      - run: npm ci
+      - run: npm test
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - name: Check committed metrics bundles
+        run: git diff --exit-code -- cache-metrics/dist/
+
+  populate:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [sonar-xs, github-windows-latest-s]
+        backend: [s3, github]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Probe and register success-only save
+        id: producer
+        uses: ./
+        with:
+          backend: ${{ matrix.backend }}
+          environment: dev
+          import-github-cache: 'false'
+          fallback-to-default-branch: 'false'
+          path: ~/.cache/lifecycle-test
+          key: lifecycle-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}-${{ matrix.backend }}
+          lookup-only: 'true'
+          save: 'true'
+      - name: Verify zero-payload miss and populate
+        shell: bash
+        env:
+          FOUND: ${{ steps.producer.outputs.cache-found }}
+          RESTORED: ${{ steps.producer.outputs.cache-restored }}
+        run: |
+          [[ "$FOUND" == false && "$RESTORED" == false ]]
+          mkdir -p ~/.cache/lifecycle-test
+          echo producer-content > ~/.cache/lifecycle-test/content
+
+  failed-producer:
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [s3, github]
+    runs-on: sonar-xs
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./
+        with:
+          backend: ${{ matrix.backend }}
+          environment: dev
+          import-github-cache: 'false'
+          fallback-to-default-branch: 'false'
+          path: ~/.cache/lifecycle-test
+          key: lifecycle-failed-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.backend }}
+          lookup-only: 'true'
+          save: 'true'
+      - name: Fail after creating cacheable files
+        run: |
+          mkdir -p ~/.cache/lifecycle-test
+          echo invalid > ~/.cache/lifecycle-test/content
+          exit 1
+
+  restore:
+    needs: populate
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [sonar-xs, github-windows-latest-s]
+        backend: [s3, github]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Required restore-only consumer
+        id: consumer
+        uses: ./
+        with:
+          backend: ${{ matrix.backend }}
+          environment: dev
+          import-github-cache: 'false'
+          fallback-to-default-branch: 'false'
+          path: ~/.cache/lifecycle-test
+          key: lifecycle-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}-${{ matrix.backend }}
+          save: 'false'
+          fail-on-cache-miss: 'true'
+      - name: Verify restored content
+        shell: bash
+        env:
+          HIT: ${{ steps.consumer.outputs.cache-hit }}
+          RESTORED: ${{ steps.consumer.outputs.cache-restored }}
+        run: |
+          [[ "$HIT" == true && "$RESTORED" == true ]]
+          [[ "$(cat ~/.cache/lifecycle-test/content)" == producer-content ]]
+      - name: Restore-only miss must not register a saver
+        uses: ./
+        with:
+          backend: ${{ matrix.backend }}
+          environment: dev
+          import-github-cache: 'false'
+          fallback-to-default-branch: 'false'
+          path: ~/.cache/lifecycle-test
+          key: lifecycle-readonly-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}-${{ matrix.backend }}
+          save: 'false'
+      - name: Required miss must fail before registering a saver
+        id: required-miss
+        continue-on-error: true
+        uses: ./
+        with:
+          backend: ${{ matrix.backend }}
+          environment: dev
+          import-github-cache: 'false'
+          fallback-to-default-branch: 'false'
+          path: ~/.cache/lifecycle-test
+          key: lifecycle-required-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}-${{ matrix.backend }}
+          save: 'true'
+          fail-on-cache-miss: 'true'
+      - name: Verify required miss failed
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.required-miss.outcome }}
+        run: '[[ "$OUTCOME" == failure ]]'
+
+  verify:
+    needs: [restore, failed-producer]
+    if: always() && !cancelled() && needs.restore.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [sonar-xs, github-windows-latest-s]
+        backend: [s3, github]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Pure probe of successful publication
+        id: success
+        uses: ./
+        with:
+          backend: ${{ matrix.backend }}
+          environment: dev
+          import-github-cache: 'false'
+          fallback-to-default-branch: 'false'
+          path: ~/.cache/lifecycle-test
+          key: lifecycle-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}-${{ matrix.backend }}
+          lookup-only: 'true'
+          save: 'false'
+          fail-on-cache-miss: 'true'
+      - name: Probe missing consumer and failed-producer keys
+        id: absent
+        uses: ./
+        with:
+          backend: ${{ matrix.backend }}
+          environment: dev
+          import-github-cache: 'false'
+          fallback-to-default-branch: 'false'
+          path: ~/.cache/lifecycle-test
+          key: lifecycle-never-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}-${{ matrix.backend }}
+          restore-keys: |
+            lifecycle-readonly-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}-${{ matrix.backend }}
+            lifecycle-required-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}-${{ matrix.backend }}
+            lifecycle-failed-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.backend }}
+          lookup-only: 'true'
+          save: 'false'
+      - name: Verify publication ownership and zero probe downloads
+        shell: bash
+        env:
+          HIT: ${{ steps.success.outputs.cache-hit }}
+          RESTORED: ${{ steps.success.outputs.cache-restored }}
+          FOUND_ABSENT: ${{ steps.absent.outputs.cache-found }}
+        run: |
+          [[ "$HIT" == true && "$RESTORED" == false && "$FOUND_ABSENT" == false ]]
+          [[ ! -e ~/.cache/lifecycle-test/content ]]

@@ -38,3 +38,5 @@ Thumbs.db
 .idea
 .npm
 .serena
+s3/dist/**/*.d.ts
+s3/dist/**/*.d.ts.map

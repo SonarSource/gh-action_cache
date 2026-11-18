@@ -1,0 +1,66 @@
+---
+name: Test native S3 storage
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  produce:
+    strategy:
+      matrix:
+        runner: [sonar-xs, github-windows-latest-s]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./s3
+        with:
+          operation: cache
+          environment: dev
+          path: fixture
+          key: native-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
+          lookup-only: 'true'
+          save: 'true'
+      - shell: bash
+        run: |
+          mkdir -p fixture
+          echo 'one successful producer' > fixture/result
+      - uses: ./s3
+        with:
+          operation: upload
+          environment: dev
+          name: fixture-${{ runner.os }}
+          path: fixture/
+          retention-days: '1'
+          if-no-files-found: error
+  consume:
+    needs: produce
+    strategy:
+      matrix:
+        runner: [sonar-xs, github-windows-latest-s]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./s3
+        id: cache
+        with:
+          operation: cache
+          environment: dev
+          path: fixture
+          key: native-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
+          fail-on-cache-miss: 'true'
+      - shell: bash
+        env:
+          RESTORED: ${{ steps.cache.outputs.cache-restored }}
+        run: |
+          test "$RESTORED" = true
+          test "$(cat fixture/result)" = 'one successful producer'
+          rm -rf fixture
+      - uses: ./s3
+        with:
+          operation: download
+          environment: dev
+          name: fixture-${{ runner.os }}
+          path: fixture
+      - shell: bash
+        run: test "$(cat fixture/result)" = 'one successful producer'

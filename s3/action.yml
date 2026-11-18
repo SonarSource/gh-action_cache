@@ -1,0 +1,57 @@
+name: S3 CI storage
+description: S3-only immutable caches and run artifacts with isolated OIDC credentials
+author: SonarSource
+inputs:
+  operation:
+    description: cache, upload, or download
+    required: true
+  environment:
+    description: prod or dev
+    default: prod
+  path:
+    description: Cache paths, upload globs, or download destination
+  key:
+    description: Exact logical cache key
+  restore-keys:
+    description: Ordered cache key prefixes
+  save:
+    description: Register a success-only cache save
+    default: 'false'
+  lookup-only:
+    description: Probe the cache without extracting it
+    default: 'false'
+  fail-on-cache-miss:
+    description: Fail if no cache candidate exists
+    default: 'false'
+  enableCrossOsArchive:
+    description: Share cache versions across operating systems
+    default: 'false'
+  name:
+    description: Exact artifact name
+  retention-days:
+    description: Artifact lifetime in days (must match the bucket lifecycle)
+    default: '1'
+  if-no-files-found:
+    description: error, warn, or ignore for an empty artifact upload
+    default: warn
+  github-token:
+    description: Token for repository metadata when resolving cache fallbacks
+    default: ${{ github.token }}
+outputs:
+  cache-hit:
+    description: Whether the exact logical cache key was found
+  cache-found:
+    description: Whether any cache candidate was found
+  cache-restored:
+    description: Whether a cache payload was extracted
+  cache-matched-key:
+    description: Matched logical cache key
+  artifact-digest:
+    description: SHA-256 of the uploaded or downloaded archive
+  producer-attempt:
+    description: Original attempt that published the selected artifact
+runs:
+  using: node24
+  main: dist/index.js
+  post: dist/index.js
+  post-if: success()

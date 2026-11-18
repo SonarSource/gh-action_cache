@@ -17,7 +17,11 @@ permissions:
 
 jobs:
   unit:
-    runs-on: sonar-xs
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [sonar-xs, github-windows-latest-s]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       id-token: write
@@ -34,8 +38,9 @@ jobs:
       - run: npm test
       - run: npx tsc --noEmit
       - run: npm run build
-      - name: Check committed metrics bundles
-        run: git diff --exit-code -- cache-metrics/dist/
+      - name: Check committed native and metrics bundles
+        if: runner.os == 'Linux'
+        run: git diff --exit-code -- cache-metrics/dist/ s3/dist/
 
   populate:
     strategy:

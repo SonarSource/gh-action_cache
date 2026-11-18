@@ -640,3 +640,59 @@ After the PR is merged to `master`:
 2. Delete the `symlink-keeper-x.y.z` branch (the tag replaces it).
 
 The tag is what callers pin to in production.
+
+## S3-only CI storage (preview)
+
+The `s3` sub-action is an explicit S3-only entry point for producer/consumer pipelines and run artifacts.
+It never invokes the GitHub cache or artifact APIs. It uses the same isolated Cognito authentication as the root action.
+The root action remains available with its existing migration and backend options.
+
+```yaml
+- uses: SonarSource/gh-action_cache/s3@<commit>
+  with:
+    operation: cache
+    path: node_modules
+    key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+    lookup-only: 'true'
+    save: 'true'
+```
+
+Cache consumers omit `save` (default `false`); use `fail-on-cache-miss: 'true'` for required handoffs.
+A producer can probe without extracting and save only in a successful post-job phase.
+Exact manifests take priority over prefixes. Search each ref in order: current canonical ref, PR base, repository default.
+Within each ref, try the primary exact key, then each explicit restore prefix, selecting the newest match.
+An exact logical fallback hit suppresses a redundant save. Merge queues cannot register a cache saver.
+Cache versions include the declared paths, operating system (unless cross-OS is enabled), and archive format.
+PR caches use `refs/pull/<number>/merge`, preserving PR isolation.
+The native namespace is separate from legacy cache objects and starts cold.
+
+```yaml
+- uses: SonarSource/gh-action_cache/s3@<commit>
+  with:
+    operation: upload
+    name: build-output
+    path: '**/target/'
+    retention-days: '1'
+    if-no-files-found: error
+- uses: SonarSource/gh-action_cache/s3@<commit>
+  with:
+    operation: download
+    name: build-output
+    path: .
+```
+
+Artifacts are scoped to repository, ref, originating run, name, and producer attempt.
+Downloads select the newest published attempt for that exact name/run, so retried consumers retain successful earlier producers.
+This preview deliberately covers artifacts exchanged within a Build run. Producers always use their own run and ref.
+A duplicate upload for the same name and attempt fails.
+Build artifacts have one-day retention and require the matching bucket lifecycle rule.
+Expired artifacts are refused before download, independently of asynchronous S3 lifecycle deletion.
+Downloads are required: an absent artifact fails the step. Uploads support `if-no-files-found: error`, `warn` (default), or `ignore`.
+
+Archives preserve executable bits and symlinks, use the common root before globs, honor exclusions, and verify SHA-256 before extraction.
+Hidden cache files are retained; hidden artifact files are excluded. Uploads stream in parallel multipart chunks.
+A conditional manifest commit prevents competing writers from replacing completed results; uncommitted payloads expire with their namespace.
+Credentials are acquired through an explicit SDK provider and are never exported to the caller's environment or AWS configuration files.
+
+The infrastructure must grant canonical-ref cache writes, own-ref artifact access, and multipart aborts,
+and configure physical artifact expiration before enabling this preview in a production pipeline.

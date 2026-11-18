@@ -98,3 +98,21 @@ it('rejects a concrete key from another workflow run before any transfer', async
   expect(core.setFailed).toHaveBeenCalledWith('Artifacts must come from this workflow run');
   expect(outputs.ready).toBeUndefined();
 });
+
+it('runs the bundled helper when Windows copies it into an ESM caller', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const caller = path.join(directory, 'caller');
+  await fs.mkdir(caller);
+  await fs.writeFile(path.join(caller, 'package.json'), '{"type":"module"}');
+  await fs.writeFile(path.join(caller, 'result'), 'content');
+  const helper = path.join(caller, '.actions', 'cache-artifact');
+  await fs.mkdir(path.join(helper, 'dist'), { recursive: true });
+  await fs.copyFile(path.resolve('artifact/package.json'), path.join(helper, 'package.json'));
+  await fs.copyFile(path.resolve('artifact/dist/index.js'), path.join(helper, 'dist/index.js'));
+  execFileSync(process.execPath, [path.join(helper, 'dist/index.js')], { cwd: caller, env: {
+    ...process.env, VITEST: '', INPUT_OPERATION: 'upload', INPUT_PHASE: 'prepare', INPUT_KEY: 'fixture',
+    INPUT_PATH: path.join(caller, 'result'), GITHUB_WORKSPACE: caller,
+  }, stdio: 'pipe' });
+  expect(JSON.parse(await fs.readFile(path.join(caller, '.ci-artifact', 'metadata.json'), 'utf8')).key)
+    .toBe('artifacts/123/2/fixture/');
+});

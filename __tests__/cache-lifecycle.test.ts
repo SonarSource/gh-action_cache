@@ -265,6 +265,14 @@ describe('rolling-v1 compatibility without new inputs', () => {
     }
   }
 
+  it.each(['', 'True', 'TRUE', 'False'])('does not validate previously accepted lookup-only=%s without opt-in', lookup => {
+    const inputs = { 'lookup-only': lookup };
+    const old = scenario(inputs, {}, undefined, released);
+    const now = scenario(inputs);
+    expect(now.calls).toEqual(old.calls);
+    expect(now.outputs['cache-hit']).toBe(old.outputs['cache-hit']);
+  });
+
   it.each(['false', 'true'])('retains legacy required-miss enforcement when import lookup=%s', lookup => {
     const inputs = { 'lookup-only': lookup, 'fail-on-cache-miss': 'true' };
     expect(() => scenario(inputs, {}, undefined, released)).toThrow();

@@ -12,10 +12,8 @@ case "$LOOKUP_ONLY" in
 esac
 
 SAVE_ENABLED="$SAVE"
-if [[ "$CACHE_BACKEND" == s3 ]]; then
-  # Never register a saver on merge-queue refs, even when explicitly requested.
-  if [[ "$CACHE_REF" == refs/heads/gh-readonly-queue/* ]]; then
-    SAVE_ENABLED=false
-  fi
+# Never register a saver on merge-queue refs, even when explicitly requested.
+if [[ "$CACHE_BACKEND" == s3 && "$CACHE_REF" == refs/heads/gh-readonly-queue/* ]]; then
+  SAVE_ENABLED=false
 fi
 echo "save-enabled=$SAVE_ENABLED" >> "$GITHUB_OUTPUT"

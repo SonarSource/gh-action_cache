@@ -288,3 +288,24 @@ describe('rolling-v1 compatibility without new inputs', () => {
     expect(payloads(scenario({ save: 'false' }, partial)).map(c => c.id)).toEqual(['s3-restore']);
   });
 });
+
+
+it.each(['', 'true'])('isolates PR caches only in the opted-in lifecycle (%s)', isolate => {
+  const directory = mkdtempSync(join(tmpdir(), 'cache-scope-'));
+  const output = join(directory, 'outputs');
+  try {
+    execFileSync('bash', [join(root, 'scripts/prepare-keys.sh')], { env: {
+      ...process.env, GITHUB_HEAD_REF: 'feature', GITHUB_REF: 'refs/pull/123/merge',
+      GITHUB_TOKEN: 'unused', GITHUB_REPOSITORY: 'owner/repo', GITHUB_OUTPUT: output,
+      INPUT_KEY: 'key', INPUT_RESTORE_KEYS: 'old-', INPUT_FALLBACK_BRANCH: 'master',
+      INPUT_FALLBACK_TO_DEFAULT_BRANCH: 'false', ISOLATE_PR_CACHE: isolate,
+    }});
+    const result = readFileSync(output, 'utf8');
+    const scope = isolate ? 'feature/refs/pull/123/merge' : 'feature';
+    expect(result).toContain(`branch-key=${scope}/key\n`);
+    expect(result).toContain(`${scope}/old-\n`);
+    expect(result).toContain('fallback-exact-key=refs/heads/master/key\n');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

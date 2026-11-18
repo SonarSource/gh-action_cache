@@ -246,6 +246,7 @@ runs:
       shell: bash
       id: prepare-keys
       env:
+        ISOLATE_PR_CACHE: ${{ inputs.operation == 'cache' && inputs.save != '' }}
         INPUT_KEY: ${{ inputs.operation == 'cache' && inputs.key || steps.artifact-prepare.outputs.key }}
         INPUT_RESTORE_KEYS: ${{ inputs.operation == 'cache' && inputs.restore-keys || '' }}
         INPUT_FALLBACK_BRANCH: ${{ inputs.operation == 'cache' && inputs.fallback-branch || '' }}

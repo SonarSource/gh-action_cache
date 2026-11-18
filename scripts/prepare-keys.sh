@@ -37,6 +37,10 @@ set -euo pipefail
 
 # Use GITHUB_HEAD_REF for PR events, GITHUB_REF for push events
 BRANCH_NAME="${GITHUB_HEAD_REF:-$GITHUB_REF}"
+# Opt-in lifecycle retains PR isolation inside the existing head-branch IAM scope.
+if [[ "${ISOLATE_PR_CACHE:-}" == true && -n "${GITHUB_HEAD_REF:-}" ]]; then
+  BRANCH_NAME="${BRANCH_NAME}/${GITHUB_REF}"
+fi
 BRANCH_KEY="${BRANCH_NAME}/${INPUT_KEY}"
 echo "branch-key=${BRANCH_KEY}" >> "$GITHUB_OUTPUT"
 

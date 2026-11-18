@@ -8,6 +8,8 @@ cache interface.
 - Supports all standard cache inputs and outputs
 - Automatic migration from GitHub Actions cache to S3 (no cold starts)
 
+For S3-only generated-build caches and same-run artifacts, see the separate [native storage entry point](s3/README.md).
+
 ## Requirements
 
 - `jq` (used by the cache key preparation script)

@@ -76370,7 +76370,17 @@ async function publish(client, bucket, manifestKey, m, file) {
         await client.send(new client_s3_1.PutObjectCommand({ Bucket: bucket, Key: manifestKey, Body: JSON.stringify(manifest), ContentType: 'application/json', IfNoneMatch: '*' }));
     }
     catch (error) {
-        await client.send(new client_s3_1.DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: [{ Key: object }] } }));
+        if (isConflict(error)) {
+            // A retried PUT can conflict with our own committed write after its response was lost.
+            const committed = await jsonObject(client, bucket, manifestKey);
+            if (committed?.object === object)
+                return manifest;
+            if (committed) {
+                await client.send(new client_s3_1.DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: [{ Key: object }] } }));
+            }
+        }
+        // Other errors leave the write outcome uncertain. Let lifecycle expiry remove any orphan;
+        // deleting now could invalidate a manifest whose PUT is still completing.
         throw error;
     }
     return manifest;

@@ -148,7 +148,16 @@ export async function publish(client: S3Client, bucket: string, manifestKey: str
     // Commit only a complete payload, atomically. Concurrent producers cannot replace an existing result.
     await client.send(new PutObjectCommand({ Bucket: bucket, Key: manifestKey, Body: JSON.stringify(manifest), ContentType: 'application/json', IfNoneMatch: '*' }));
   } catch (error) {
-    await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: [{ Key: object }] } }));
+    if (isConflict(error)) {
+      // A retried PUT can conflict with our own committed write after its response was lost.
+      const committed = await jsonObject(client, bucket, manifestKey) as Manifest | undefined;
+      if (committed?.object === object) return manifest;
+      if (committed) {
+        await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: [{ Key: object }] } }));
+      }
+    }
+    // Other errors leave the write outcome uncertain. Let lifecycle expiry remove any orphan;
+    // deleting now could invalidate a manifest whose PUT is still completing.
     throw error;
   }
   return manifest;

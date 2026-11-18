@@ -188,6 +188,42 @@ describe('S3-only cache lifecycle', () => {
     expect(storage.isConflict({ name: 'ConditionalRequestConflict' })).toBe(false);
     expect(storage.isConflict({ name: 'PreconditionFailed' })).toBe(true);
   });
+  it('keeps a committed payload when the conditional PUT retry conflicts with itself', async () => {
+    const send = vi.mocked(S3Client.prototype.send);
+    const original = send.getMockImplementation()!;
+    send.mockImplementation(async (command: unknown) => {
+      const result = await original(command);
+      if (command instanceof PutObjectCommand) {
+        // S3 accepted the first request; the SDK retried after losing its response.
+        throw Object.assign(new Error('conflict'), { name: 'PreconditionFailed' });
+      }
+      return result;
+    });
+    await producer();
+    expect(state.errors).toEqual([]);
+    await fs.rm(source, { recursive: true });
+    await invocation({ operation: 'cache', key: 'exact', path: source, 'fail-on-cache-miss': 'true' });
+    expect(state.errors).toEqual([]);
+    expect(await fs.readFile(path.join(source, 'content'), 'utf8')).toBe('producer-content');
+    expect(state.objects.size).toBe(2);
+  });
+  it('keeps the payload when a manifest PUT fails with an uncertain outcome', async () => {
+    const send = vi.mocked(S3Client.prototype.send);
+    const original = send.getMockImplementation()!;
+    send.mockImplementation(async (command: unknown) => {
+      const result = await original(command);
+      if (command instanceof PutObjectCommand) throw new Error('response timed out');
+      return result;
+    });
+    await producer();
+    expect(state.errors).toEqual(['response timed out']);
+    expect(state.objects.size).toBe(2);
+    state.errors = [];
+    await fs.rm(source, { recursive: true });
+    await invocation({ operation: 'cache', key: 'exact', path: source, 'fail-on-cache-miss': 'true' });
+    expect(state.errors).toEqual([]);
+    expect(await fs.readFile(path.join(source, 'content'), 'utf8')).toBe('producer-content');
+  });
   it('commits manifests first-writer-wins and removes a losing payload', async () => {
     const client = await storage.clientFor('dev');
     const packed = await storage.archive(source, temp);

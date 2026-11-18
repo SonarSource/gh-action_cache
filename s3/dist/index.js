@@ -76018,7 +76018,12 @@ async function fallbackRefs(current) {
         defaultBranch = (await response.json()).default_branch;
     }
     const base = current.startsWith('refs/pull/') ? (event.pull_request?.base?.ref || process.env.GITHUB_BASE_REF) : undefined;
-    return [...new Set([current, ...(base ? [`refs/heads/${base}`] : []), `refs/heads/${defaultBranch}`])];
+    const fallbacks = [...new Set([base, defaultBranch].filter((branch) => !!branch))];
+    const allowed = fallbacks.filter(branch => /^(main|master|branch-.+)$/.test(branch));
+    if (fallbacks.some(branch => !allowed.includes(branch))) {
+        core.warning('Existing S3 credentials allow fallback reads only from main, master and branch-*; other bases are skipped');
+    }
+    return [...new Set([current, ...allowed.map(branch => `refs/heads/${branch}`)])];
 }
 async function findCache(client, bucket, refs, version, key, restoreKeys) {
     let selected;
@@ -76092,7 +76097,7 @@ async function cache(post) {
 }
 async function uploadArtifact(client, bucket, root, ref, name, work) {
     if ((input('retention-days') || '1') !== '1')
-        throw new Error('Build artifact storage requires the one-day bucket lifecycle');
+        throw new Error('Build artifact downloads support one-day expiry only');
     const result = await s.archive(required('path'), work, false);
     if (!result) {
         const policy = input('if-no-files-found') || 'warn';
@@ -76252,7 +76257,13 @@ function storageRef(env = process.env) {
     return ref;
 }
 function prefix(kind, ref, repository = process.env.GITHUB_REPOSITORY) {
-    return kind === 'cache' ? `cache/${repository}/native-v1/${ref}/` : `artifacts/1/${repository}/${ref}/`;
+    // Reuse the deployed role's cache/<repository>/<version>/<head_ref-or-ref> scope.
+    // Keep the canonical ref inside it so separate PRs from the same branch never share results.
+    const scope = ref.startsWith('refs/pull/') && ref === storageRef() ? process.env.GITHUB_HEAD_REF : ref;
+    if (!scope || scope.split('/').some(part => !part || part === '.' || part === '..')) {
+        throw new Error('A pull-request storage scope requires GITHUB_HEAD_REF');
+    }
+    return `cache/${repository}/native-v1/${scope}/${kind}/${ref}/`;
 }
 function cacheVersion(paths, crossOs) {
     return (0, exports.hash)(JSON.stringify([(0, exports.lines)(paths), crossOs ? 'cross-os' : process.platform, 'tar-gzip-v1']));

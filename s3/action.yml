@@ -29,7 +29,7 @@ inputs:
   name:
     description: Exact artifact name
   retention-days:
-    description: Artifact lifetime in days (must match the bucket lifecycle)
+    description: Artifact download availability in days; physical objects follow the existing cache bucket lifecycle
     default: '1'
   if-no-files-found:
     description: error, warn, or ignore for an empty artifact upload

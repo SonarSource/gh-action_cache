@@ -17,7 +17,7 @@ jobs:
       - uses: ./s3
         with:
           operation: cache
-          environment: dev
+          environment: prod
           path: fixture
           key: native-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
           lookup-only: 'true'
@@ -29,7 +29,7 @@ jobs:
       - uses: ./s3
         with:
           operation: upload
-          environment: dev
+          environment: prod
           name: fixture-${{ runner.os }}
           path: fixture/
           retention-days: '1'
@@ -46,7 +46,7 @@ jobs:
         id: cache
         with:
           operation: cache
-          environment: dev
+          environment: prod
           path: fixture
           key: native-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
           fail-on-cache-miss: 'true'
@@ -60,7 +60,7 @@ jobs:
       - uses: ./s3
         with:
           operation: download
-          environment: dev
+          environment: prod
           name: fixture-${{ runner.os }}
           path: fixture
       - shell: bash

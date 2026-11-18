@@ -57,9 +57,10 @@ beforeEach(async () => {
   await fs.mkdir(source);
   await fs.writeFile(path.join(source, 'content'), 'producer-content');
   const event = path.join(temp, 'event.json');
-  await fs.writeFile(event, JSON.stringify({ repository: { default_branch: 'master' }, pull_request: { base: { ref: 'feature-base' } } }));
+  await fs.writeFile(event, JSON.stringify({ repository: { default_branch: 'master' }, pull_request: { base: { ref: 'branch-feature-base' } } }));
   vi.stubEnv('GITHUB_REPOSITORY', 'owner/repo');
   vi.stubEnv('GITHUB_REF', 'refs/pull/123/merge');
+  vi.stubEnv('GITHUB_HEAD_REF', 'feature/test');
   vi.stubEnv('GITHUB_SHA', 'commit-sha');
   vi.stubEnv('GITHUB_RUN_ID', '12345');
   vi.stubEnv('GITHUB_RUN_ATTEMPT', '1');
@@ -105,6 +106,29 @@ describe('S3-only cache lifecycle', () => {
     expect(state.uploads).toBe(1); expect(state.errors).toEqual([]);
     expect([...state.objects.keys()].some(k => k.includes('/refs/pull/123/merge/'))).toBe(true);
   });
+  it('uses the existing branch-authorized paths while isolating canonical PR refs', () => {
+    for (const kind of ['cache', 'artifact'] as const) {
+      const first = storage.prefix(kind, 'refs/pull/123/merge');
+      expect(first).toBe(`cache/owner/repo/native-v1/feature/test/${kind}/refs/pull/123/merge/`);
+      vi.stubEnv('GITHUB_REF', 'refs/pull/456/merge');
+      expect(storage.prefix(kind, 'refs/pull/456/merge')).not.toBe(first);
+      vi.stubEnv('GITHUB_REF', 'refs/pull/123/merge');
+      expect(storage.prefix(kind, 'refs/heads/master')).toBe(`cache/owner/repo/native-v1/refs/heads/master/${kind}/refs/heads/master/`);
+    }
+  });
+  it('requires the signed PR head scope instead of requesting an unauthorized canonical prefix', () => {
+    vi.stubEnv('GITHUB_HEAD_REF', '');
+    expect(() => storage.prefix('cache', storage.storageRef())).toThrow('GITHUB_HEAD_REF');
+  });
+  it('skips unsupported feature-base fallback reads under the existing credentials', async () => {
+    const event = process.env.GITHUB_EVENT_PATH!;
+    await fs.writeFile(event, JSON.stringify({ repository: { default_branch: 'master' }, pull_request: { base: { ref: 'feature-base' } } }));
+    const send = vi.mocked(S3Client.prototype.send);
+    await invocation({ operation: 'cache', path: source, key: 'missing', 'lookup-only': 'true' });
+    const prefixes = send.mock.calls.map(([command]) => (command as ListObjectsV2Command).input.Prefix).filter(Boolean);
+    expect(prefixes.some(prefix => prefix!.includes('/refs/heads/feature-base/'))).toBe(false);
+    expect(state.errors).toEqual([]);
+  });
   it('restores exactly once and never saves a read-only consumer', async () => {
     await producer(); await fs.rm(source, { recursive: true });
     const inputs = { operation: 'cache', path: source, key: 'exact', 'fail-on-cache-miss': 'true' };
@@ -135,12 +159,12 @@ describe('S3-only cache lifecycle', () => {
     expect(state.outputs['cache-hit']).toBe('false'); expect(state.outputs['cache-matched-key']).toBe('prefix-old');
   });
   it('reads the nondefault PR base before the repository default', async () => {
-    vi.stubEnv('GITHUB_REF', 'refs/heads/feature-base'); await producer();
+    vi.stubEnv('GITHUB_REF', 'refs/heads/branch-feature-base'); await producer();
     vi.stubEnv('GITHUB_REF', 'refs/heads/master'); await producer();
     vi.stubEnv('GITHUB_REF', 'refs/pull/123/merge');
     const get = vi.spyOn(storage, 'restore');
     await invocation({ operation: 'cache', path: source, key: 'exact' });
-    expect(get.mock.calls[0][2].ref).toBe('refs/heads/feature-base');
+    expect(get.mock.calls[0][2].ref).toBe('refs/heads/branch-feature-base');
   });
   it('does not save an exact fallback hit or a merge-queue miss', async () => {
     vi.stubEnv('GITHUB_REF', 'refs/heads/master'); await producer();

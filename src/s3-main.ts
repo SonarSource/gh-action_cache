@@ -17,7 +17,12 @@ export async function fallbackRefs(current: string): Promise<string[]> {
     defaultBranch = ((await response.json()) as { default_branch: string }).default_branch;
   }
   const base = current.startsWith('refs/pull/') ? (event.pull_request?.base?.ref || process.env.GITHUB_BASE_REF) : undefined;
-  return [...new Set([current, ...(base ? [`refs/heads/${base}`] : []), `refs/heads/${defaultBranch}`])];
+  const fallbacks = [...new Set([base, defaultBranch].filter((branch): branch is string => !!branch))];
+  const allowed = fallbacks.filter(branch => /^(main|master|branch-.+)$/.test(branch));
+  if (fallbacks.some(branch => !allowed.includes(branch))) {
+    core.warning('Existing S3 credentials allow fallback reads only from main, master and branch-*; other bases are skipped');
+  }
+  return [...new Set([current, ...allowed.map(branch => `refs/heads/${branch}`)])];
 }
 
 async function findCache(client: S3Client, bucket: string, refs: string[], version: string, key: string, restoreKeys: string[]) {
@@ -86,7 +91,7 @@ async function cache(post: boolean) {
 }
 
 async function uploadArtifact(client: S3Client, bucket: string, root: string, ref: string, name: string, work: string) {
-  if ((input('retention-days') || '1') !== '1') throw new Error('Build artifact storage requires the one-day bucket lifecycle');
+  if ((input('retention-days') || '1') !== '1') throw new Error('Build artifact downloads support one-day expiry only');
   const result = await s.archive(required('path'), work, false);
   if (!result) {
     const policy = input('if-no-files-found') || 'warn';

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       verify-native-storage:
-        description: Run native S3 integration after the development storage policy is deployed
+        description: Run native S3 integration with the existing production cache credentials
         type: boolean
         default: false
       verify-failed-producer:

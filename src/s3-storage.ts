@@ -45,7 +45,13 @@ export function storageRef(env = process.env): string {
   return ref;
 }
 export function prefix(kind: 'cache' | 'artifact', ref: string, repository = process.env.GITHUB_REPOSITORY!): string {
-  return kind === 'cache' ? `cache/${repository}/native-v1/${ref}/` : `artifacts/1/${repository}/${ref}/`;
+  // Reuse the deployed role's cache/<repository>/<version>/<head_ref-or-ref> scope.
+  // Keep the canonical ref inside it so separate PRs from the same branch never share results.
+  const scope = ref.startsWith('refs/pull/') && ref === storageRef() ? process.env.GITHUB_HEAD_REF : ref;
+  if (!scope || scope.split('/').some(part => !part || part === '.' || part === '..')) {
+    throw new Error('A pull-request storage scope requires GITHUB_HEAD_REF');
+  }
+  return `cache/${repository}/native-v1/${scope}/${kind}/${ref}/`;
 }
 export function cacheVersion(paths: string, crossOs: boolean): string {
   return hash(JSON.stringify([lines(paths), crossOs ? 'cross-os' : process.platform, 'tar-gzip-v1']));

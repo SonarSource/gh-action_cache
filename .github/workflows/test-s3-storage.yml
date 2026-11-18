@@ -2,6 +2,7 @@
 name: Test native S3 storage
 on:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
   id-token: write

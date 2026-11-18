@@ -7,6 +7,10 @@ on:
     branches: [master]
   workflow_dispatch:
     inputs:
+      verify-native-storage:
+        description: Run native S3 integration after the development storage policy is deployed
+        type: boolean
+        default: false
       verify-failed-producer:
         description: Run deliberately failing producer jobs and verify that neither backend publishes their cache
         type: boolean
@@ -16,6 +20,13 @@ permissions:
   contents: read
 
 jobs:
+  native-storage:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify-native-storage
+    uses: ./.github/workflows/test-s3-storage.yml
+    permissions:
+      contents: read
+      id-token: write
+
   unit:
     strategy:
       fail-fast: false
@@ -27,14 +38,23 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: SonarSource/ci-github-actions/config-npm@v1
+      - if: runner.os != 'Windows'
+        uses: SonarSource/ci-github-actions/config-npm@v1
         with:
           disable-caching: true
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
           package-manager-cache: false
-      - run: npm ci
+      - name: Install dependencies from npmjs on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          node -e "const fs = require('node:fs'); const file = 'package-lock.json'; fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replaceAll('https://repox.jfrog.io/artifactory/api/npm/npm/', 'https://registry.npmjs.org/'));"
+          npm ci --registry=https://registry.npmjs.org
+          git restore package-lock.json
+      - if: runner.os != 'Windows'
+        run: npm ci
       - run: npm test
       - run: npx tsc --noEmit
       - run: npm run build

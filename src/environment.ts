@@ -9,4 +9,3 @@ export const ACCOUNT_IDS: Record<string, string> = {
 };
 
 export const AWS_REGION = 'eu-central-1';
-

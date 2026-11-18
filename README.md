@@ -75,10 +75,10 @@ it never overlays a usable S3 partial match. If a selected S3 entry disappears, 
 another payload. Post-save registration uses a metadata-only call and does not extract another archive. Disable `import-github-cache`
 after seeding to remove migration lookups. Restore-only consumers never seed S3, even when they restore a GitHub fallback.
 
-These lifecycle controls do not change the existing branch namespace/IAM mapping, fallback order, or backend listing/upload algorithm.
-In particular, this change does not add conditional first-writer-wins S3 publication or fix exact-object selection/pagination in the
-underlying backend. Those require separate backend/infrastructure validation before claiming full GitHub-cache policy equivalence.
-Run-local artifact transport, producer-attempt identity and artifact retention are separate concerns.
+Explicit S3 producers use conditional first-writer-wins publication through the existing backend.
+Cache save failures remain warnings; artifact upload failures are fatal. The branch namespace, IAM mapping,
+fallback order and cache lookup algorithm stay with the existing action. Cache discovery still has the backend's
+existing prefix/listing semantics; artifact downloads use its opt-in exact-key policy.
 
 ### Input Environment Variables
 

@@ -76345,7 +76345,8 @@ async function archive(paths, work, includeHidden = true) {
     const roots = matcher.getSearchPaths();
     const rootIsFile = roots.length === 1 && !(await fs.lstat(roots[0])).isDirectory();
     const root = rootIsFile ? path.dirname(roots[0]) : commonRoot(roots);
-    const entries = files.map(file => path.relative(root, file).split(path.sep).join('/') || '.');
+    // tar treats a leading @ as an instruction to read another archive. Prefix literal paths.
+    const entries = files.map(file => `./${path.relative(root, file).split(path.sep).join('/') || '.'}`);
     if (entries.some(entry => !safeEntry(entry)))
         throw new Error('Archive path escapes its root');
     const file = path.join(work, 'payload.tgz');

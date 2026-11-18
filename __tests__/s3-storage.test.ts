@@ -137,6 +137,17 @@ describe('S3-only cache lifecycle', () => {
     expect(await fs.readFile(path.join(source, 'content'), 'utf8')).toBe('producer-content');
     expect(state.downloads).toBe(1); expect(state.uploads).toBe(1); expect(state.errors).toEqual([]);
   });
+  it('round-trips scoped npm packages as literal paths instead of tar include directives', async () => {
+    const scoped = path.join(source, '@angular-eslint', 'eslint-plugin');
+    await fs.mkdir(scoped, { recursive: true });
+    await fs.writeFile(path.join(scoped, 'index.js'), 'export default {}');
+    await producer();
+    expect(state.errors).toEqual([]);
+    await fs.rm(source, { recursive: true });
+    await invocation({ operation: 'cache', path: source, key: 'exact', 'fail-on-cache-miss': 'true' });
+    expect(await fs.readFile(path.join(scoped, 'index.js'), 'utf8')).toBe('export default {}');
+    expect(state.errors).toEqual([]);
+  });
   it('keeps pure probes and read-only misses from publishing', async () => {
     const inputs = { operation: 'cache', path: source, key: 'missing', 'lookup-only': 'true' };
     await invocation(inputs); await invocation(inputs, true);

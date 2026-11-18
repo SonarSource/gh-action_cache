@@ -47,6 +47,24 @@ jobs:
       - *checkout
       - *fixture
       - *upload
+  consume-container:
+    needs: produce-linux
+    runs-on: sonar-m-docker
+    container:
+      image: ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
+    steps:
+      - name: Install bootstrap tools
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y ca-certificates curl jq
+      - *checkout
+      - name: Restore artifact inside a job container
+        uses: ./
+        with:
+          operation: download
+          key: ${{ needs.produce-linux.outputs.artifact }}
+          path: result
+      - run: test "$(cat result/@scope/result)" = 'one successful producer'
   consume:
     needs: [produce-linux, produce-windows]
     strategy:

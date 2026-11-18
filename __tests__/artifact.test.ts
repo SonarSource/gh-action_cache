@@ -99,16 +99,23 @@ it('rejects a concrete key from another workflow run before any transfer', async
   expect(outputs.ready).toBeUndefined();
 });
 
-it('runs the bundled helper when Windows copies it into an ESM caller', async () => {
+it('stages a real helper directory for container loaders and runs it inside ESM callers', async () => {
   const { execFileSync } = await import('node:child_process');
+  const { parse } = await import('yaml');
   const caller = path.join(directory, 'caller');
   await fs.mkdir(caller);
   await fs.writeFile(path.join(caller, 'package.json'), '{"type":"module"}');
   await fs.writeFile(path.join(caller, 'result'), 'content');
   const helper = path.join(caller, '.actions', 'cache-artifact');
-  await fs.mkdir(path.join(helper, 'dist'), { recursive: true });
-  await fs.copyFile(path.resolve('artifact/package.json'), path.join(helper, 'package.json'));
-  await fs.copyFile(path.resolve('artifact/dist/index.js'), path.join(helper, 'dist/index.js'));
+  const action = parse(await fs.readFile('action.yml', 'utf8'));
+  const prepare = action.runs.steps.find((step: { name: string }) => step.name === 'Prepare artifact helper');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    execFileSync('bash', ['-e', '-c', prepare.run], { cwd: caller, env: {
+      ...process.env, OPERATION: 'upload', ACTION_PATH_CACHE: path.resolve('.'), GITHUB_ENV: path.join(caller, 'environment'),
+    }, stdio: 'pipe' });
+  }
+  expect((await fs.lstat(helper)).isSymbolicLink()).toBe(false);
+  expect(await fs.readFile(path.join(helper, 'action.yml'), 'utf8')).toContain('using: node24');
   execFileSync(process.execPath, [path.join(helper, 'dist/index.js')], { cwd: caller, env: {
     ...process.env, VITEST: '', INPUT_OPERATION: 'upload', INPUT_PHASE: 'prepare', INPUT_KEY: 'fixture',
     INPUT_PATH: path.join(caller, 'result'), GITHUB_WORKSPACE: caller,

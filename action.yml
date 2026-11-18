@@ -221,8 +221,10 @@ runs:
           *) echo "::error::operation must be cache, upload or download"; exit 1 ;;
         esac
         echo "ACTION_PATH_CACHE=$ACTION_PATH_CACHE" >> "$GITHUB_ENV"
-        mkdir -p .actions
-        ln -sfn "$ACTION_PATH_CACHE/artifact" .actions/cache-artifact
+        # The runner loads local action metadata outside job containers, where absolute symlinks cannot resolve.
+        rm -rf .actions/cache-artifact
+        mkdir -p .actions/cache-artifact
+        cp -R "$ACTION_PATH_CACHE/artifact/." .actions/cache-artifact/
 
     - name: Prepare artifact
       if: inputs.operation != 'cache'
